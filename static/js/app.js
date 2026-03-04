@@ -355,7 +355,19 @@
         const sse = api.streamJob(jobId);
         state.activeSSE = sse;
 
+        sse.addEventListener('open', () => {
+            if (job && (job.status === 'running' || job.status === 'queued')) {
+                dom.terminalStatus.textContent = 'RUNNING';
+                dom.terminalStatus.className = 'terminal__status running';
+            }
+        });
+
         sse.addEventListener('output', (e) => {
+            // Update status to RUNNING on first output if still showing CONNECTING
+            if (dom.terminalStatus.textContent === 'CONNECTING') {
+                dom.terminalStatus.textContent = 'RUNNING';
+                dom.terminalStatus.className = 'terminal__status running';
+            }
             dom.terminalOutput.textContent += e.data + '\n';
             autoScroll();
         });
