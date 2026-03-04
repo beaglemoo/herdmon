@@ -1,0 +1,16 @@
+[Unit]
+Description=moo-updater - Patch Management UI
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/moo-updater
+ExecStart=/root/moo-updater/venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8585
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=moo-updater
+
+[Install]
+WantedBy=multi-user.target

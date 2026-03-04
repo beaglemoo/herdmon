@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>moo-updater // patch operations</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="grid-overlay"></div>
+
+    <header class="top-bar">
+        <div class="top-bar__brand">
+            <span class="top-bar__logo">MOO</span>
+            <span class="top-bar__separator">//</span>
+            <span class="top-bar__subtitle">PATCH OPS</span>
+        </div>
+        <div class="top-bar__status">
+            <span class="top-bar__indicator" id="connectionIndicator"></span>
+            <span class="top-bar__label" id="connectionLabel">CONNECTING</span>
+            <span class="top-bar__divider"></span>
+            <span class="top-bar__label" id="hostCount">-- hosts</span>
+            <span class="top-bar__divider"></span>
+            <span class="top-bar__label" id="lastRefresh">--:--:--</span>
+        </div>
+    </header>
+
+    <main class="dashboard">
+        <section class="panel panel--hosts">
+            <div class="panel__header">
+                <h2 class="panel__title">HOST INVENTORY</h2>
+                <div class="panel__controls">
+                    <label class="select-all-control">
+                        <input type="checkbox" id="selectAllUpdates" class="sr-only">
+                        <span class="select-all-control__box"></span>
+                        <span class="select-all-control__label">SELECT ALL WITH UPDATES</span>
+                    </label>
+                    <button class="btn btn--ghost" id="refreshHosts">REFRESH</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table class="host-table" id="hostTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"></th>
+                            <th class="col-host">HOSTNAME</th>
+                            <th class="col-ip">IP</th>
+                            <th class="col-os">OS</th>
+                            <th class="col-updates">UPDATES</th>
+                            <th class="col-security">SECURITY</th>
+                            <th class="col-status">STATUS</th>
+                            <th class="col-reboot">REBOOT</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hostTableBody">
+                        <tr class="loading-row">
+                            <td colspan="8">
+                                <div class="loading-bar"></div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel panel--actions">
+            <div class="action-bar">
+                <div class="action-bar__left">
+                    <span class="action-bar__selected" id="selectedCount">0 selected</span>
+                    <div class="action-bar__dropdown-wrap">
+                        <select class="action-bar__dropdown" id="playbookSelect" disabled>
+                            <option value="">-- select playbook --</option>
+                        </select>
+                    </div>
+                    <button class="btn btn--primary" id="runUpdate" disabled>RUN UPDATE</button>
+                </div>
+                <div class="action-bar__right">
+                    <span class="action-bar__job-count" id="activeJobCount"></span>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel panel--jobs" id="jobsPanel">
+            <div class="panel__header">
+                <h2 class="panel__title">JOB HISTORY</h2>
+            </div>
+            <div class="jobs-list" id="jobsList">
+                <div class="jobs-empty">No jobs yet. Select hosts and run an update.</div>
+            </div>
+        </section>
+    </main>
+
+    <div class="terminal-overlay" id="terminalOverlay" hidden>
+        <div class="terminal">
+            <div class="terminal__header">
+                <div class="terminal__title" id="terminalTitle">JOB OUTPUT</div>
+                <div class="terminal__status" id="terminalStatus"></div>
+                <button class="terminal__close" id="terminalClose">&times;</button>
+            </div>
+            <div class="terminal__body" id="terminalBody">
+                <pre class="terminal__output" id="terminalOutput"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
