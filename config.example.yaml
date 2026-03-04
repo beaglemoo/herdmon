@@ -1,0 +1,31 @@
+server:
+  host: "0.0.0.0"
+  port: 8585
+
+patchmon:
+  base_url: "http://192.168.0.54:3000"
+  token_key: "moo_updater_api"
+  token_secret: "your-secret-here"
+
+ansible:
+  playbook_dir: "/root/ansible/playbooks"
+  inventory_path: "/root/ansible/inventory/hosts"
+  working_dir: "/root/ansible"
+  max_concurrent_jobs: 3
+  command_timeout: 1800
+
+playbooks:
+  - name: "update-all"
+    file: "update-all.yml"
+    description: "Update system packages (apt/dnf) on all Linux hosts"
+    groups: ["debian", "centos", "ubuntu", "lxc", "proxmox"]
+
+  - name: "update-lxc-backup"
+    file: "update-lxc-with-backup.yml"
+    description: "Backup LXCs to PBS then update system packages"
+    groups: ["lxc"]
+
+  - name: "update-lxc-apps"
+    file: "update-lxc-apps.yml"
+    description: "Update LXC applications via community scripts"
+    groups: ["lxc"]
