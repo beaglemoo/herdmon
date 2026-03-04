@@ -80,6 +80,7 @@
         selectedCount: $('#selectedCount'),
         playbookSelect: $('#playbookSelect'),
         runUpdate: $('#runUpdate'),
+        updateAllPending: $('#updateAllPending'),
         activeJobCount: $('#activeJobCount'),
         jobsList: $('#jobsList'),
         terminalOverlay: $('#terminalOverlay'),
@@ -428,10 +429,25 @@
             renderHostTable(state.hosts);
             updateSelectedCount();
             updateSelectAllState();
+            updatePendingButton();
         } catch (err) {
             dom.connectionIndicator.className = 'top-bar__indicator error';
             dom.connectionLabel.textContent = 'ERROR';
             console.error('Failed to load hosts:', err);
+        }
+    }
+
+    function getPendingHosts() {
+        return state.hosts.filter(h => h.in_ansible && h.updates_count > 0);
+    }
+
+    function updatePendingButton() {
+        const pending = getPendingHosts();
+        dom.updateAllPending.disabled = pending.length === 0;
+        if (pending.length > 0) {
+            dom.updateAllPending.textContent = `UPDATE ALL PENDING (${pending.length})`;
+        } else {
+            dom.updateAllPending.textContent = 'UPDATE ALL PENDING';
         }
     }
 
@@ -488,6 +504,34 @@
         }
     }
 
+    async function updateAllPending() {
+        const pending = getPendingHosts();
+        if (pending.length === 0) return;
+
+        // Use "update-all" playbook which handles both apt and dnf
+        const hosts = pending.map(h => h.ansible_name);
+        dom.updateAllPending.disabled = true;
+        dom.updateAllPending.textContent = 'STARTING...';
+
+        try {
+            const result = await api.createJob('update-all', hosts);
+
+            // Clear any manual selection
+            state.selectedHosts.clear();
+            updateSelectedCount();
+            updateSelectAllState();
+            renderHostTable(state.hosts);
+
+            await pollJobs();
+            openTerminal(result.job_id);
+            startJobPolling();
+        } catch (err) {
+            alert('Failed to start job: ' + err.message);
+        } finally {
+            updatePendingButton();
+        }
+    }
+
     function startJobPolling() {
         if (state.jobPollInterval) clearInterval(state.jobPollInterval);
         state.jobPollInterval = setInterval(async () => {
@@ -527,6 +571,8 @@
         });
 
         dom.runUpdate.addEventListener('click', runUpdate);
+
+        dom.updateAllPending.addEventListener('click', updateAllPending);
 
         dom.terminalClose.addEventListener('click', closeTerminal);
 

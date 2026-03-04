@@ -323,6 +323,28 @@ body {
     background: var(--amber-dim);
 }
 
+.btn--accent {
+    background: var(--green-dim);
+    color: #fff;
+    border: 1px solid var(--green);
+}
+
+.btn--accent:hover:not(:disabled) {
+    background: var(--green);
+    box-shadow: 0 0 12px rgba(61, 170, 109, 0.25);
+}
+
+.btn--accent:active:not(:disabled) {
+    background: var(--green-dim);
+}
+
+.action-bar__divider-v {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    flex-shrink: 0;
+}
+
 /* ---- HOST TABLE ---- */
 
 .table-wrap {
