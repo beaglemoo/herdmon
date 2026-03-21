@@ -16,7 +16,7 @@ playbook_config: list[PlaybookEntry] = []
 
 class CreateJobRequest(BaseModel):
     playbook: str
-    hosts: list[str]
+    hosts: list[str] = []
 
 
 @router.get("/playbooks")
@@ -28,6 +28,7 @@ async def list_playbooks():
                 "file": p.file,
                 "description": p.description,
                 "groups": p.groups,
+                "cluster_operation": p.cluster_operation,
             }
             for p in playbook_config
         ]
@@ -41,10 +42,10 @@ async def create_job(request: CreateJobRequest):
     if not pb:
         raise HTTPException(status_code=400, detail=f"Unknown playbook: {request.playbook}")
 
-    if not request.hosts:
+    if not request.hosts and not pb.cluster_operation:
         raise HTTPException(status_code=400, detail="No hosts specified")
 
-    job = await runner.create_job(pb.name, pb.file, request.hosts)
+    job = await runner.create_job(pb.name, pb.file, request.hosts, pb.extra_args)
     return {"job_id": job.id, "status": job.status.value}
 
 

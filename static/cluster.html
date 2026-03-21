@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>moo-updater // cluster ops</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="grid-overlay"></div>
+
+    <header class="top-bar">
+        <div class="top-bar__brand">
+            <span class="top-bar__logo">MOO</span>
+            <span class="top-bar__separator">//</span>
+            <span class="top-bar__subtitle">CLUSTER OPS</span>
+            <nav class="top-bar__nav">
+                <a href="/" class="top-bar__nav-link">PATCH OPS</a>
+                <a href="/cluster.html" class="top-bar__nav-link active">CLUSTER OPS</a>
+            </nav>
+        </div>
+        <div class="top-bar__status">
+            <span class="top-bar__indicator" id="connectionIndicator"></span>
+            <span class="top-bar__label" id="connectionLabel">CONNECTING</span>
+            <span class="top-bar__divider"></span>
+            <span class="top-bar__label" id="lastRefresh">--:--:--</span>
+        </div>
+    </header>
+
+    <main class="dashboard">
+        <section class="panel panel--cluster">
+            <div class="panel__header">
+                <h2 class="panel__title">PROXMOX CLUSTER</h2>
+                <div class="panel__controls">
+                    <button class="btn btn--ghost" id="refreshNodes">REFRESH</button>
+                </div>
+            </div>
+            <div class="node-grid" id="nodeGrid">
+                <div class="node-grid__loading">
+                    <div class="loading-bar"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel panel--actions">
+            <div class="action-bar">
+                <div class="action-bar__left">
+                    <button class="btn btn--warning" id="rollingRestart">ROLLING UPDATE &amp; RESTART ALL</button>
+                </div>
+                <div class="action-bar__right">
+                    <span class="action-bar__job-count" id="activeJobCount"></span>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel panel--jobs" id="jobsPanel">
+            <div class="panel__header">
+                <h2 class="panel__title">JOB HISTORY</h2>
+            </div>
+            <div class="jobs-list" id="jobsList">
+                <div class="jobs-empty">No jobs yet.</div>
+            </div>
+        </section>
+    </main>
+
+    <div class="terminal-overlay" id="terminalOverlay" hidden>
+        <div class="terminal">
+            <div class="terminal__header">
+                <div class="terminal__title" id="terminalTitle">JOB OUTPUT</div>
+                <div class="terminal__status" id="terminalStatus"></div>
+                <button class="terminal__close" id="terminalClose">&times;</button>
+            </div>
+            <div class="terminal__body" id="terminalBody">
+                <pre class="terminal__output" id="terminalOutput"></pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="confirm-overlay" id="confirmOverlay" hidden>
+        <div class="confirm-dialog">
+            <div class="confirm-dialog__title" id="confirmTitle">Confirm Action</div>
+            <div class="confirm-dialog__message" id="confirmMessage"></div>
+            <div class="confirm-dialog__actions">
+                <button class="btn btn--ghost" id="confirmCancel">CANCEL</button>
+                <button class="btn btn--warning" id="confirmProceed">PROCEED</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/cluster.js"></script>
+</body>
+</html>

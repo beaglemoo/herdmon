@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.config import load_config
-from app.routers import hosts, jobs
+from app.routers import cluster, hosts, jobs
 from app.services.ansible_runner import AnsibleRunner
 from app.services.patchmon import PatchmonClient
 
@@ -29,6 +29,9 @@ async def lifespan(app: FastAPI):
     jobs.runner = runner
     jobs.playbook_config = settings.playbooks
 
+    # Cluster nodes config
+    cluster.cluster_nodes = settings.cluster_nodes
+
     yield
 
     await patchmon.close()
@@ -38,6 +41,7 @@ app = FastAPI(title="moo-updater", version="1.0.0", lifespan=lifespan)
 
 app.include_router(hosts.router)
 app.include_router(jobs.router)
+app.include_router(cluster.router)
 
 # Serve static files (must be last - catches all unmatched routes)
 static_dir = Path(__file__).parent.parent / "static"

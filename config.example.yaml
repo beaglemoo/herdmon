@@ -3,9 +3,9 @@ server:
   port: 8585
 
 patchmon:
-  base_url: "http://192.168.0.54:3000"
-  token_key: "moo_updater_api"
-  token_secret: "your-secret-here"
+  base_url: "http://your-patchmon-host:3000"
+  token_key: "your-api-key"
+  token_secret: "your-api-secret"
 
 ansible:
   playbook_dir: "/root/ansible/playbooks"
@@ -29,3 +29,40 @@ playbooks:
     file: "update-lxc-apps.yml"
     description: "Update LXC applications via community scripts"
     groups: ["lxc"]
+
+  - name: "rolling-restart"
+    file: "rolling-restart.yml"
+    description: "Rolling update and restart of all Proxmox nodes"
+    groups: ["proxmox"]
+    cluster_operation: true
+    extra_args: ["-e", "confirm_each_node=false"]
+
+  - name: "node-update"
+    file: "update-all.yml"
+    description: "Update packages on a Proxmox node"
+    groups: ["proxmox"]
+
+  - name: "node-reboot"
+    file: "rolling-restart.yml"
+    description: "Reboot a Proxmox node (graceful workload shutdown/restart)"
+    groups: ["proxmox"]
+    extra_args: ["-e", "confirm_each_node=false"]
+
+  - name: "host-reboot"
+    file: "reboot-host.yml"
+    description: "Simple reboot (PBS or standalone hosts)"
+    groups: []
+
+cluster_nodes:
+  - name: "node1"
+    ip: "10.0.0.1"
+    type: "proxmox"
+  - name: "node2"
+    ip: "10.0.0.2"
+    type: "proxmox"
+  - name: "node3"
+    ip: "10.0.0.3"
+    type: "proxmox"
+  - name: "backup"
+    ip: "10.0.0.4"
+    type: "pbs"

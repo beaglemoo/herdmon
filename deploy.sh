@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET_HOST="192.168.0.100"
-TARGET_USER="root"
+TARGET_HOST="${MOO_DEPLOY_HOST:-your-ansible-host}"
+TARGET_USER="${MOO_DEPLOY_USER:-root}"
 TARGET_DIR="/root/moo-updater"
 SERVICE_NAME="moo-updater"
 

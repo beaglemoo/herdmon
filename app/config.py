@@ -12,7 +12,7 @@ class ServerConfig(BaseModel):
 
 
 class PatchmonConfig(BaseModel):
-    base_url: str = "http://192.168.0.54:3000"
+    base_url: str = "http://localhost:3000"
     token_key: str = ""
     token_secret: str = ""
 
@@ -25,11 +25,19 @@ class AnsibleConfig(BaseModel):
     command_timeout: int = 1800
 
 
+class ClusterNode(BaseModel):
+    name: str
+    ip: str
+    type: str = "proxmox"  # proxmox or pbs
+
+
 class PlaybookEntry(BaseModel):
     name: str
     file: str
     description: str
     groups: list[str] = []
+    cluster_operation: bool = False
+    extra_args: list[str] = []
 
 
 class Settings(BaseModel):
@@ -37,6 +45,7 @@ class Settings(BaseModel):
     patchmon: PatchmonConfig = PatchmonConfig()
     ansible: AnsibleConfig = AnsibleConfig()
     playbooks: list[PlaybookEntry] = []
+    cluster_nodes: list[ClusterNode] = []
 
 
 def load_config(config_path: Optional[str] = None) -> Settings:

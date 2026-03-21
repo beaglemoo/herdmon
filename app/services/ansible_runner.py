@@ -60,7 +60,11 @@ class AnsibleRunner:
         return self._jobs.get(job_id)
 
     async def create_job(
-        self, playbook_name: str, playbook_file: str, hosts: list[str]
+        self,
+        playbook_name: str,
+        playbook_file: str,
+        hosts: list[str],
+        extra_args: list[str] | None = None,
     ) -> Job:
         job = Job(
             id=str(uuid.uuid4()),
@@ -71,10 +75,10 @@ class AnsibleRunner:
             created_at=datetime.now(timezone.utc),
         )
         self._jobs[job.id] = job
-        asyncio.create_task(self._run_job(job))
+        asyncio.create_task(self._run_job(job, extra_args or []))
         return job
 
-    async def _run_job(self, job: Job):
+    async def _run_job(self, job: Job, extra_args: list[str] | None = None):
         async with self._semaphore:
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now(timezone.utc)
@@ -88,9 +92,15 @@ class AnsibleRunner:
                 playbook_path,
                 "-i",
                 self._config.inventory_path,
-                "--limit",
-                ",".join(job.hosts),
             ]
+
+            # Only add --limit if hosts are specified
+            if job.hosts:
+                cmd.extend(["--limit", ",".join(job.hosts)])
+
+            # Append any extra args (e.g. -e confirm_each_node=false)
+            if extra_args:
+                cmd.extend(extra_args)
 
             try:
                 proc = await asyncio.create_subprocess_exec(
