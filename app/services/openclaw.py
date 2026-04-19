@@ -62,4 +62,8 @@ class OpenClawClient:
                 "summary": "AI verification unavailable (OpenClaw unreachable).",
             }
 
+        fired = report.get("fired_actions")
+        if fired:
+            logger.info("OpenClaw fired_actions for job %s: %s", job.id, fired)
+
         self._runner.publish_verify(job, report)
