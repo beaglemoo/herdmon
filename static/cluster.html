@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>moo-updater // cluster ops</title>
-    <link rel="stylesheet" href="/css/style.css?v=1776625769">
+    <link rel="stylesheet" href="/css/style.css?v=1776700000">
 </head>
 <body>
     <div class="grid-overlay"></div>
@@ -48,6 +48,8 @@
             <div class="action-bar">
                 <div class="action-bar__left">
                     <button class="btn btn--danger" id="rollingRestart">ROLLING UPDATE &amp; RESTART ALL</button>
+                    <span class="action-bar__divider-v"></span>
+                    <button class="btn btn--ghost" id="remediateNfs" aria-label="Remount NFS on all 6 NFS clients and kick their services">REMEDIATE NFS</button>
                 </div>
                 <div class="action-bar__right">
                     <span class="action-bar__job-count" id="activeJobCount"></span>
@@ -111,8 +113,8 @@
         </div>
     </div>
 
-    <script src="/js/common.js?v=1776625769"></script>
-    <script src="/js/ansible-parser.js?v=1776625769"></script>
-    <script src="/js/cluster.js?v=1776625769"></script>
+    <script src="/js/common.js?v=1776700000"></script>
+    <script src="/js/ansible-parser.js?v=1776700000"></script>
+    <script src="/js/cluster.js?v=1776700000"></script>
 </body>
 </html>

@@ -60,6 +60,7 @@
         nodeGrid: $('#nodeGrid'),
         refreshNodes: $('#refreshNodes'),
         rollingRestart: $('#rollingRestart'),
+        remediateNfs: $('#remediateNfs'),
         activeJobCount: $('#activeJobCount'),
         jobsList: $('#jobsList'),
         terminalOverlay: $('#terminalOverlay'),
@@ -189,6 +190,17 @@
             startJobPolling();
         } catch (err) {
             showConfirm('Error', 'Failed to start job: ' + err.message, null);
+        }
+    }
+
+    async function runRemediateNfs() {
+        try {
+            const result = await api.createJob('remediate-nfs', []);
+            await pollJobs();
+            openTerminal(result.job_id);
+            startJobPolling();
+        } catch (err) {
+            showConfirm('Error', 'Failed to start remediate-nfs job: ' + err.message, null);
         }
     }
 
@@ -607,6 +619,14 @@
         MooCommon.initConfirmModal();
 
         dom.refreshNodes.addEventListener('click', loadNodes);
+
+        dom.remediateNfs.addEventListener('click', () => {
+            showConfirm(
+                'Remediate NFS',
+                'Remount NFS on 6 clients (paperless, nzbget, sonarr-hd, sonarr-4k, radarr, plex-lxc) and kick their services?',
+                runRemediateNfs
+            );
+        });
 
         dom.rollingRestart.addEventListener('click', () => {
             const nodeNames = state.nodes.map(n => n.name).join(', ') || 'all nodes';
