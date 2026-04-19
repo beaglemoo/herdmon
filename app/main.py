@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import load_config
 from app.routers import cluster, health, hosts, jobs
@@ -42,7 +43,17 @@ async def lifespan(app: FastAPI):
     await patchmon.close()
 
 
+class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path.endswith((".js", ".css", ".html")) or path == "/" or path.startswith("/cluster"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
 app = FastAPI(title="moo-updater", version="1.0.0", lifespan=lifespan)
+app.add_middleware(NoCacheStaticMiddleware)
 
 app.include_router(hosts.router)
 app.include_router(jobs.router)
