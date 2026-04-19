@@ -29,6 +29,7 @@ app:
 openclaw:
   enabled: false
   verify_url: "http://192.168.2.226:9090/verify"
+  maintenance_base_url: "http://192.168.2.226:9090"
   timeout_seconds: 120
   # Map playbook name -> verification kind understood by ops-verify.
   # Kinds: "proxmox_node", "lxc", "cluster".
@@ -41,6 +42,9 @@ openclaw:
     update-lxc-apps: lxc
     update-lxc-full: lxc
     update-lxc-backup: lxc
+    drain-node: proxmox_node
+    undrain-node: proxmox_node
+    remediate-nfs: cluster
 
 playbooks:
   # ----- LXC update variants -----
@@ -83,10 +87,27 @@ playbooks:
     cluster_operation: true
     extra_args: ["-e", "confirm_each_node=false"]
 
+  - name: "drain-node"
+    file: "drain-node.yml"
+    description: "Drain a Proxmox node via ha-manager without rebooting"
+    groups: ["proxmox"]
+
+  - name: "undrain-node"
+    file: "undrain-node.yml"
+    description: "Exit HA maintenance on a Proxmox node and resume service placement"
+    groups: ["proxmox"]
+
   - name: "host-reboot"
     file: "reboot-host.yml"
     description: "Simple reboot (PBS or standalone hosts)"
     groups: []
+
+  # ----- NFS remediation -----
+  - name: "remediate-nfs"
+    file: "remediate-nfs.yml"
+    description: "Remount NFS and kick services on paperless + nzbget + arr stack"
+    groups: ["nfs_clients"]
+    cluster_operation: true
 
   # ----- Herdmon self-update + chained combos -----
   - name: "update-herdmon"
