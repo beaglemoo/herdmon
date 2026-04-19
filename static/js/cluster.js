@@ -11,9 +11,11 @@
     const state = {
         nodes: [],
         jobs: [],
+        playbooks: [],
         activeSSE: null,
         refreshInterval: null,
         jobPollInterval: null,
+        maintenanceInterval: null,
     };
 
     // ---- API ----
@@ -41,6 +43,50 @@
                 const err = await res.json().catch(() => ({}));
                 throw new Error(err.detail || `HTTP ${res.status}`);
             }
+            return res.json();
+        },
+
+        async getPlaybooks() {
+            const res = await fetch('/api/playbooks');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        },
+
+        async getMaintenance() {
+            const res = await fetch('/api/maintenance');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        },
+
+        async enableMaintenance(body) {
+            const res = await fetch('/api/maintenance/enable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            return res.json();
+        },
+
+        async disableMaintenance() {
+            const res = await fetch('/api/maintenance/disable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            return res.json();
+        },
+
+        async getNfsState() {
+            const res = await fetch('/api/cluster/nfs-state');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.json();
         },
 
@@ -145,6 +191,16 @@
             html += `<div class="node-card__actions">`;
             if (!isPbs) {
                 html += `<button class="btn btn--warning btn--sm" data-action="update" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>UPDATE</button>`;
+                if (isMaint) {
+                    const hasUndrain = state.playbooks.some(p => p.name === 'undrain-node');
+                    if (hasUndrain) {
+                        html += `<button class="btn btn--ghost btn--sm" data-action="undrain" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>UNDRAIN</button>`;
+                    } else {
+                        html += `<button class="btn btn--ghost btn--sm" data-action="undrain" data-node="${escapeHtml(node.name)}" disabled title="Exit drain by restarting the node or running the CLI directly">UNDRAIN</button>`;
+                    }
+                } else {
+                    html += `<button class="btn btn--warning btn--sm" data-action="drain" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>DRAIN</button>`;
+                }
                 html += `<button class="btn btn--danger btn--sm" data-action="reboot" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>REBOOT</button>`;
             } else {
                 html += `<button class="btn btn--danger btn--sm" data-action="reboot-pbs" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>REBOOT</button>`;
@@ -174,14 +230,28 @@
         if (action === 'update') {
             showConfirm(
                 `Update ${node}`,
-                `Run apt dist-upgrade on ${node}? This will update system packages without rebooting.`,
+                `Run apt dist-upgrade on ${node}? This will update system packages without rebooting. HA will migrate services during the upgrade window if the node goes unresponsive.`,
                 () => runNodeJob('node-update', node),
                 { proceedClass: 'btn--warning' }
+            );
+        } else if (action === 'drain') {
+            showConfirm(
+                `Drain ${node}`,
+                `Drain ${node}? HA will migrate all workloads off this node. Node stays up (no reboot).`,
+                () => runNodeJob('drain-node', node),
+                { proceedClass: 'btn--warning' }
+            );
+        } else if (action === 'undrain') {
+            showConfirm(
+                `Undrain ${node}`,
+                `Exit HA maintenance on ${node}? HA will begin scheduling workloads back onto this node.`,
+                () => runNodeJob('undrain-node', node),
+                { proceedClass: 'btn--ghost' }
             );
         } else if (action === 'reboot') {
             showConfirm(
                 `Reboot ${node}`,
-                `Reboot ${node}? This will gracefully shut down all CTs/VMs, update packages, reboot, then restart all workloads.`,
+                `Drain + dist-upgrade + reboot ${node}? HA migrates workloads, node is rebooted, workloads return automatically.`,
                 () => runNodeJob('node-reboot', node),
                 { proceedClass: 'btn--danger' }
             );
@@ -711,10 +781,20 @@
 
     // ---- Init ----
 
+    async function loadPlaybooks() {
+        try {
+            const data = await api.getPlaybooks();
+            state.playbooks = data.playbooks || [];
+        } catch (err) {
+            console.error('Failed to load playbooks:', err);
+        }
+    }
+
     async function init() {
         bindEvents();
 
         await Promise.allSettled([
+            loadPlaybooks(),
             loadNodes(),
             pollJobs(),
         ]);
