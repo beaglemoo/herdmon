@@ -47,7 +47,11 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         path = request.url.path
-        if path.endswith((".js", ".css", ".html")) or path == "/" or path.startswith("/cluster"):
+        if path.endswith((".html",)) or path == "/" or path == "/cluster.html":
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        elif path.endswith((".js", ".css")):
             response.headers["Cache-Control"] = "no-cache, must-revalidate"
         return response
 
