@@ -68,6 +68,14 @@ After a job completes, `ansible_runner.py` calls `asyncio.create_task(_post_veri
 
 The stdout drain loop in `ansible_runner.py` is wrapped in `asyncio.wait_for(..., timeout=command_timeout)`. This ensures a silent-hang playbook (e.g. a debconf prompt without `DEBIAN_FRONTEND=noninteractive`) is killed at the configured timeout, not just when the process writes its last byte.
 
+### PatchMon refresh task
+
+Every update playbook (`update-all.yml`, `update-lxc-system.yml`, `update-lxc-with-backup.yml`) ends with a `patchmon-agent report` task (`ignore_errors: yes`, `changed_when: false`). This forces each managed host to push fresh package data to PatchMon as soon as apt finishes, so the Patch Ops host table drops pending counts immediately rather than waiting for the 60 s scheduled tick. Cancelled/SIGTERM'd runs can leave stale counts because they skip this final task -- run `ansible linux_all -m command -a "patchmon-agent report"` from the Ansible VM to fan out a manual refresh.
+
+### Static-asset caching
+
+HTML responses carry `Cache-Control: no-store, Pragma: no-cache, Expires: 0`; JS/CSS carry `Cache-Control: no-cache, must-revalidate`. Script/stylesheet tags in `static/*.html` also carry a `?v=<unix-timestamp>` query string. Bump the timestamp with a `sed` one-liner (documented in [CLAUDE.md](CLAUDE.md) and the deploy flow) whenever a release needs a guaranteed cache break; without this, Safari will ignore the etag and keep serving stale JS.
+
 ## Config Blocks
 
 Two new top-level blocks in `config.yaml`:
