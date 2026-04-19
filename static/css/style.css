@@ -565,19 +565,6 @@ body {
     animation: slideDown 0.2s ease-out;
 }
 
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        max-height: 0;
-        transform: translateY(-4px);
-    }
-    to {
-        opacity: 1;
-        max-height: 600px;
-        transform: translateY(0);
-    }
-}
-
 .package-detail__header {
     display: flex;
     align-items: center;
