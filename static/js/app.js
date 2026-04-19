@@ -318,20 +318,6 @@
         });
     }
 
-    function formatDuration(startedAt, finishedAt) {
-        if (!startedAt) return '--';
-        const start = new Date(startedAt);
-        const end = finishedAt ? new Date(finishedAt) : new Date();
-        const seconds = Math.floor((end - start) / 1000);
-
-        if (seconds < 60) return `${seconds}s`;
-        const minutes = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        if (minutes < 60) return `${minutes}m ${secs}s`;
-        const hours = Math.floor(minutes / 60);
-        return `${hours}h ${minutes % 60}m`;
-    }
-
     // ---- Terminal ----
 
     function openTerminal(jobId) {
@@ -601,12 +587,8 @@
 
     // ---- Utilities ----
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
+    const escapeHtml = MooCommon.escapeHtml;
+    const formatDuration = MooCommon.formatDuration;
 
     // ---- Init ----
 

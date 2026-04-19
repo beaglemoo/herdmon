@@ -14,7 +14,6 @@
         activeSSE: null,
         refreshInterval: null,
         jobPollInterval: null,
-        pendingConfirm: null,
     };
 
     // ---- API ----
@@ -69,11 +68,6 @@
         terminalBody: $('#terminalBody'),
         terminalOutput: $('#terminalOutput'),
         terminalClose: $('#terminalClose'),
-        confirmOverlay: $('#confirmOverlay'),
-        confirmTitle: $('#confirmTitle'),
-        confirmMessage: $('#confirmMessage'),
-        confirmCancel: $('#confirmCancel'),
-        confirmProceed: $('#confirmProceed'),
     };
 
     // ---- Node Cards ----
@@ -191,23 +185,8 @@
         }
     }
 
-    // ---- Confirm Dialog ----
-
-    function showConfirm(title, message, onConfirm) {
-        dom.confirmTitle.textContent = title;
-        dom.confirmMessage.textContent = message;
-        state.pendingConfirm = onConfirm;
-        dom.confirmOverlay.hidden = false;
-
-        // Hide proceed button if this is just an error message
-        dom.confirmProceed.style.display = onConfirm ? '' : 'none';
-        dom.confirmCancel.textContent = onConfirm ? 'CANCEL' : 'OK';
-    }
-
-    function hideConfirm() {
-        dom.confirmOverlay.hidden = true;
-        state.pendingConfirm = null;
-    }
+    const showConfirm = MooCommon.showConfirm;
+    const hideConfirm = MooCommon.hideConfirm;
 
     // ---- Jobs ----
 
@@ -245,20 +224,6 @@
                 openTerminal(card.dataset.jobId);
             });
         });
-    }
-
-    function formatDuration(startedAt, finishedAt) {
-        if (!startedAt) return '--';
-        const start = new Date(startedAt);
-        const end = finishedAt ? new Date(finishedAt) : new Date();
-        const seconds = Math.floor((end - start) / 1000);
-
-        if (seconds < 60) return `${seconds}s`;
-        const minutes = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        if (minutes < 60) return `${minutes}m ${secs}s`;
-        const hours = Math.floor(minutes / 60);
-        return `${hours}h ${minutes % 60}m`;
     }
 
     // ---- Terminal ----
@@ -391,24 +356,18 @@
     // ---- Event Binding ----
 
     function bindEvents() {
+        MooCommon.initConfirmModal();
+
         dom.refreshNodes.addEventListener('click', loadNodes);
 
         dom.rollingRestart.addEventListener('click', () => {
+            const nodeNames = state.nodes.map(n => n.name).join(', ') || 'all nodes';
             showConfirm(
                 'Rolling Update & Restart All',
-                'This will update and reboot pve1, pve2, and pve3 one at a time. All CTs/VMs will be gracefully shut down and restarted on each node. This will take a while.',
-                runRollingRestart
+                `This will update and reboot ${nodeNames} one at a time. All CTs/VMs will be gracefully shut down and restarted on each node. This will take a while.`,
+                runRollingRestart,
+                { proceedClass: 'btn--danger' }
             );
-        });
-
-        dom.confirmCancel.addEventListener('click', hideConfirm);
-        dom.confirmProceed.addEventListener('click', () => {
-            const fn = state.pendingConfirm;
-            hideConfirm();
-            if (fn) fn();
-        });
-        dom.confirmOverlay.addEventListener('click', (e) => {
-            if (e.target === dom.confirmOverlay) hideConfirm();
         });
 
         dom.terminalClose.addEventListener('click', closeTerminal);
@@ -418,20 +377,17 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                if (!dom.confirmOverlay.hidden) hideConfirm();
-                else if (!dom.terminalOverlay.hidden) closeTerminal();
+                const confirmOverlay = document.getElementById('confirmOverlay');
+                if (confirmOverlay && !confirmOverlay.hidden) { hideConfirm(); return; }
+                if (!dom.terminalOverlay.hidden) closeTerminal();
             }
         });
     }
 
     // ---- Utilities ----
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
+    const escapeHtml = MooCommon.escapeHtml;
+    const formatDuration = MooCommon.formatDuration;
 
     // ---- Init ----
 
