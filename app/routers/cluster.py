@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -15,6 +16,20 @@ cluster_nodes: list[ClusterNode] = []
 # Cache
 _cache: dict = {"data": None, "timestamp": 0}
 _CACHE_TTL = 15
+
+# Reuse SSH sessions across calls: ControlMaster cuts the 3-way handshake
+# per query to ~200ms. Control sockets live under /root/.ssh/controlmasters.
+_SSH_CONTROL_DIR = "/root/.ssh/controlmasters"
+os.makedirs(_SSH_CONTROL_DIR, mode=0o700, exist_ok=True)
+_SSH_OPTS = (
+    "-o", "ConnectTimeout=5",
+    "-o", "StrictHostKeyChecking=no",
+    "-o", "BatchMode=yes",
+    "-o", "ControlMaster=auto",
+    "-o", f"ControlPath={_SSH_CONTROL_DIR}/%r@%h:%p",
+    "-o", "ControlPersist=300",
+    "-o", "ServerAliveInterval=30",
+)
 
 # NFS client config: host -> expected mount targets
 _NFS_CLIENTS = [
@@ -125,9 +140,7 @@ async def _query_node(node: ClusterNode) -> dict:
     try:
         proc = await asyncio.create_subprocess_exec(
             "ssh",
-            "-o", "ConnectTimeout=5",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
+            *_SSH_OPTS,
             f"root@{node.ip}",
             cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -207,9 +220,7 @@ async def _query_nfs_client(client: dict) -> dict:
     try:
         proc = await asyncio.create_subprocess_exec(
             "ssh",
-            "-o", "ConnectTimeout=5",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
+            *_SSH_OPTS,
             f"root@{ip}",
             "findmnt -t nfs,nfs4 -n -o TARGET,FSTYPE",
             stdout=asyncio.subprocess.PIPE,
