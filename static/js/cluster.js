@@ -11,10 +11,11 @@
     const state = {
         nodes: [],
         jobs: [],
+        playbooks: [],
         activeSSE: null,
         refreshInterval: null,
         jobPollInterval: null,
-        pendingConfirm: null,
+        maintenanceInterval: null,
     };
 
     // ---- API ----
@@ -45,6 +46,50 @@
             return res.json();
         },
 
+        async getPlaybooks() {
+            const res = await fetch('/api/playbooks');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        },
+
+        async getMaintenance() {
+            const res = await fetch('/api/maintenance');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        },
+
+        async enableMaintenance(body) {
+            const res = await fetch('/api/maintenance/enable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            return res.json();
+        },
+
+        async disableMaintenance() {
+            const res = await fetch('/api/maintenance/disable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+            return res.json();
+        },
+
+        async getNfsState() {
+            const res = await fetch('/api/cluster/nfs-state');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        },
+
         streamJob(jobId) {
             return new EventSource(`/api/jobs/${jobId}/stream`);
         },
@@ -61,6 +106,7 @@
         nodeGrid: $('#nodeGrid'),
         refreshNodes: $('#refreshNodes'),
         rollingRestart: $('#rollingRestart'),
+        remediateNfs: $('#remediateNfs'),
         activeJobCount: $('#activeJobCount'),
         jobsList: $('#jobsList'),
         terminalOverlay: $('#terminalOverlay'),
@@ -69,11 +115,34 @@
         terminalBody: $('#terminalBody'),
         terminalOutput: $('#terminalOutput'),
         terminalClose: $('#terminalClose'),
-        confirmOverlay: $('#confirmOverlay'),
-        confirmTitle: $('#confirmTitle'),
-        confirmMessage: $('#confirmMessage'),
-        confirmCancel: $('#confirmCancel'),
-        confirmProceed: $('#confirmProceed'),
+        terminalCancel: $('#terminalCancel'),
+        terminalStrip: $('#terminalStrip'),
+        terminalRecap: $('#terminalRecap'),
+        terminalVerdict: $('#terminalVerdict'),
+        stripBreadcrumb: $('#stripBreadcrumb'),
+        stripElapsed: $('#stripElapsed'),
+        stripTaskCount: $('#stripTaskCount'),
+        stripChips: $('#stripChips'),
+        stripHeartbeat: $('#stripHeartbeat'),
+        filterOkLines: $('#filterOkLines'),
+        verdictHeader: $('#verdictHeader'),
+        verdictLabel: $('#verdictLabel'),
+        verdictToggle: $('#verdictToggle'),
+        verdictBody: $('#verdictBody'),
+        terminalHealth: $('#terminalHealth'),
+        healthToggle: $('#healthToggle'),
+        healthBody: $('#healthBody'),
+        updateAppBtn: $('#updateAppBtn'),
+        maintenancePill: $('#maintenancePill'),
+        maintModalOverlay: $('#maintModalOverlay'),
+        maintModalClose: $('#maintModalClose'),
+        maintModalCancel: $('#maintModalCancel'),
+        maintModalDisable: $('#maintModalDisable'),
+        maintModalEnable: $('#maintModalEnable'),
+        maintReason: $('#maintReason'),
+        maintScope: $('#maintScope'),
+        maintTtl: $('#maintTtl'),
+        maintTtlVal: $('#maintTtlVal'),
     };
 
     // ---- Node Cards ----
@@ -88,10 +157,15 @@
         for (const node of nodes) {
             const statusClass = node.online ? 'online' : 'offline';
             const isPbs = node.type === 'pbs';
+            const isMaint = !isPbs && node.maintenance === true;
 
-            html += `<div class="node-card ${statusClass}">`;
+            html += `<div class="node-card ${statusClass}${isMaint ? ' maint' : ''}">`;
             html += `<div class="node-card__header">`;
-            html += `<span class="node-card__name">${escapeHtml(node.name)}</span>`;
+            html += `<span class="node-card__name">${escapeHtml(node.name)}`;
+            if (!isPbs && node.is_ha_master) {
+                html += ` <span class="node-card__master-badge">MASTER</span>`;
+            }
+            html += `</span>`;
             html += `<span class="node-card__status-dot ${statusClass}"></span>`;
             html += `</div>`;
 
@@ -113,6 +187,14 @@
                 if (node.kernel) {
                     html += `<div class="node-card__row"><span class="node-card__label">KERNEL</span><span class="node-card__value">${escapeHtml(node.kernel)}</span></div>`;
                 }
+                if (!isPbs) {
+                    if (isMaint) {
+                        html += `<div class="node-card__row"><span class="node-card__label">HA</span><span class="node-card__value node-card__value--maint">MAINTENANCE</span></div>`;
+                    } else if (node.ha_lrm_state != null) {
+                        const pinned = node.ha_services_pinned != null ? node.ha_services_pinned : 0;
+                        html += `<div class="node-card__row"><span class="node-card__label">HA</span><span class="node-card__value">${escapeHtml(String(node.ha_lrm_state))} &middot; ${pinned} services</span></div>`;
+                    }
+                }
             } else {
                 html += `<div class="node-card__row"><span class="node-card__label">STATUS</span><span class="node-card__value node-card__value--offline">OFFLINE</span></div>`;
             }
@@ -121,7 +203,17 @@
 
             html += `<div class="node-card__actions">`;
             if (!isPbs) {
-                html += `<button class="btn btn--primary btn--sm" data-action="update" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>UPDATE</button>`;
+                html += `<button class="btn btn--warning btn--sm" data-action="update" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>UPDATE</button>`;
+                if (isMaint) {
+                    const hasUndrain = state.playbooks.some(p => p.name === 'undrain-node');
+                    if (hasUndrain) {
+                        html += `<button class="btn btn--ghost btn--sm" data-action="undrain" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>UNDRAIN</button>`;
+                    } else {
+                        html += `<button class="btn btn--ghost btn--sm" data-action="undrain" data-node="${escapeHtml(node.name)}" disabled title="Exit drain by restarting the node or running the CLI directly">UNDRAIN</button>`;
+                    }
+                } else {
+                    html += `<button class="btn btn--warning btn--sm" data-action="drain" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>DRAIN</button>`;
+                }
                 html += `<button class="btn btn--danger btn--sm" data-action="reboot" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>REBOOT</button>`;
             } else {
                 html += `<button class="btn btn--danger btn--sm" data-action="reboot-pbs" data-node="${escapeHtml(node.name)}" ${node.online ? '' : 'disabled'}>REBOOT</button>`;
@@ -151,20 +243,37 @@
         if (action === 'update') {
             showConfirm(
                 `Update ${node}`,
-                `Run apt dist-upgrade on ${node}? This will update system packages without rebooting.`,
-                () => runNodeJob('node-update', node)
+                `Run apt dist-upgrade on ${node}? This will update system packages without rebooting. HA will migrate services during the upgrade window if the node goes unresponsive.`,
+                () => runNodeJob('node-update', node),
+                { proceedClass: 'btn--warning' }
+            );
+        } else if (action === 'drain') {
+            showConfirm(
+                `Drain ${node}`,
+                `Drain ${node}? HA will migrate all workloads off this node. Node stays up (no reboot).`,
+                () => runNodeJob('drain-node', node),
+                { proceedClass: 'btn--warning' }
+            );
+        } else if (action === 'undrain') {
+            showConfirm(
+                `Undrain ${node}`,
+                `Exit HA maintenance on ${node}? HA will begin scheduling workloads back onto this node.`,
+                () => runNodeJob('undrain-node', node),
+                { proceedClass: 'btn--ghost' }
             );
         } else if (action === 'reboot') {
             showConfirm(
                 `Reboot ${node}`,
-                `Reboot ${node}? This will gracefully shut down all CTs/VMs, update packages, reboot, then restart all workloads.`,
-                () => runNodeJob('node-reboot', node)
+                `Drain + dist-upgrade + reboot ${node}? HA migrates workloads, node is rebooted, workloads return automatically.`,
+                () => runNodeJob('node-reboot', node),
+                { proceedClass: 'btn--danger' }
             );
         } else if (action === 'reboot-pbs') {
             showConfirm(
                 `Reboot ${node}`,
                 `Reboot ${node} (Proxmox Backup Server)? The server will be unavailable during reboot.`,
-                () => runNodeJob('host-reboot', node)
+                () => runNodeJob('host-reboot', node),
+                { proceedClass: 'btn--danger' }
             );
         }
     }
@@ -180,6 +289,17 @@
         }
     }
 
+    async function runRemediateNfs() {
+        try {
+            const result = await api.createJob('remediate-nfs', []);
+            await pollJobs();
+            openTerminal(result.job_id);
+            startJobPolling();
+        } catch (err) {
+            showConfirm('Error', 'Failed to start remediate-nfs job: ' + err.message, null);
+        }
+    }
+
     async function runRollingRestart() {
         try {
             const result = await api.createJob('rolling-restart', []);
@@ -191,25 +311,24 @@
         }
     }
 
-    // ---- Confirm Dialog ----
-
-    function showConfirm(title, message, onConfirm) {
-        dom.confirmTitle.textContent = title;
-        dom.confirmMessage.textContent = message;
-        state.pendingConfirm = onConfirm;
-        dom.confirmOverlay.hidden = false;
-
-        // Hide proceed button if this is just an error message
-        dom.confirmProceed.style.display = onConfirm ? '' : 'none';
-        dom.confirmCancel.textContent = onConfirm ? 'CANCEL' : 'OK';
-    }
-
-    function hideConfirm() {
-        dom.confirmOverlay.hidden = true;
-        state.pendingConfirm = null;
-    }
+    const showConfirm = MooCommon.showConfirm;
+    const hideConfirm = MooCommon.hideConfirm;
 
     // ---- Jobs ----
+
+    function buildRecapBadge(job) {
+        const recap = (job.verify && job.verify.recap) ? job.verify.recap : null;
+        if (!recap || !Array.isArray(recap) || recap.length === 0) return '';
+        const totals = recap.reduce((acc, r) => {
+            acc.ok += r.ok || 0; acc.changed += r.changed || 0;
+            acc.failed += r.failed || 0; acc.unreachable += r.unreachable || 0;
+            return acc;
+        }, { ok: 0, changed: 0, failed: 0, unreachable: 0 });
+        let cls = 'recap--clean';
+        if (totals.failed > 0 || totals.unreachable > 0) cls = 'recap--failed';
+        else if (totals.changed > 0) cls = 'recap--changed';
+        return `<span class="job-card__recap ${cls}">ok=${totals.ok} changed=${totals.changed}${totals.failed > 0 ? ` failed=${totals.failed}` : ''}</span>`;
+    }
 
     function renderJobs(jobs) {
         if (!jobs.length) {
@@ -225,15 +344,17 @@
         for (const job of jobs) {
             const duration = formatDuration(job.started_at, job.finished_at);
             const hostCount = job.hosts ? job.hosts.length : 0;
-            const hostLabel = hostCount > 0
-                ? `${hostCount} host${hostCount !== 1 ? 's' : ''}`
-                : 'cluster';
+            const hostLabel = hostCount > 0 ? `${hostCount} host${hostCount !== 1 ? 's' : ''}` : 'cluster';
+            const timestamp = MooCommon.formatRelativeTime(job.created_at || job.started_at);
+            const recapBadge = buildRecapBadge(job);
 
             html += `<div class="job-card" data-job-id="${job.id}">
                 <span class="job-card__status-dot ${job.status}"></span>
                 <span class="job-card__playbook">${escapeHtml(job.playbook)}</span>
                 <span class="job-card__hosts">${hostLabel}</span>
+                <span class="job-card__timestamp">${timestamp}</span>
                 <span class="job-card__duration">${duration}</span>
+                ${recapBadge}
                 <span class="job-card__status-label ${job.status}">${job.status.toUpperCase()}</span>
             </div>`;
         }
@@ -247,21 +368,247 @@
         });
     }
 
-    function formatDuration(startedAt, finishedAt) {
-        if (!startedAt) return '--';
-        const start = new Date(startedAt);
-        const end = finishedAt ? new Date(finishedAt) : new Date();
-        const seconds = Math.floor((end - start) / 1000);
+    // ---- Terminal ----
 
-        if (seconds < 60) return `${seconds}s`;
-        const minutes = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        if (minutes < 60) return `${minutes}m ${secs}s`;
-        const hours = Math.floor(minutes / 60);
-        return `${hours}h ${minutes % 60}m`;
+    let _termParser = null;
+    let _elapsedTimer = null;
+    let _heartbeatTimer = null;
+    let _termStartedAt = null;
+    let _currentJobId = null;
+    let _currentPlaybook = null;
+    let _rawLines = [];
+    let _verdictCollapsed = false;
+    let _healthCollapsed = false;
+
+    function resetTerminalStrip() {
+        dom.terminalStrip.hidden = true;
+        dom.terminalRecap.hidden = true;
+        dom.terminalVerdict.hidden = true;
+        dom.terminalCancel.hidden = true;
+        dom.stripBreadcrumb.textContent = '';
+        dom.stripElapsed.textContent = '';
+        dom.stripTaskCount.textContent = '';
+        dom.stripChips.innerHTML = '';
+        dom.stripHeartbeat.hidden = true;
+        dom.verdictBody.hidden = false;
+        dom.verdictToggle.classList.remove('collapsed');
+        _verdictCollapsed = false;
+        if (dom.terminalHealth) dom.terminalHealth.hidden = true;
+        if (dom.healthToggle) dom.healthToggle.classList.remove('collapsed');
+        _healthCollapsed = false;
+        _currentPlaybook = null;
+        clearInterval(_elapsedTimer);
+        clearInterval(_heartbeatTimer);
+        _elapsedTimer = null;
+        _heartbeatTimer = null;
+        _termStartedAt = null;
+        _rawLines = [];
+        if (dom.filterOkLines) dom.filterOkLines.checked = false;
+        if (_termParser) _termParser.reset();
+        _termParser = AnsibleParser.createParser();
     }
 
-    // ---- Terminal ----
+    function startElapsedTimer() {
+        clearInterval(_elapsedTimer);
+        _elapsedTimer = setInterval(() => {
+            if (!_termStartedAt) return;
+            const s = Math.floor((Date.now() - _termStartedAt) / 1000);
+            const mm = String(Math.floor(s / 60)).padStart(2, '0');
+            const ss = String(s % 60).padStart(2, '0');
+            dom.stripElapsed.textContent = `${mm}:${ss}`;
+        }, 1000);
+    }
+
+    function resetHeartbeat() {
+        clearInterval(_heartbeatTimer);
+        dom.stripHeartbeat.hidden = true;
+        _heartbeatTimer = setInterval(() => { dom.stripHeartbeat.hidden = false; }, 10000);
+    }
+
+    function updateStripFromParser() {
+        const s = _termParser.getState();
+        if (s.currentPlay || s.currentTask) {
+            dom.terminalStrip.hidden = false;
+            let bc = '';
+            if (s.currentPlay) bc += `<span class="play-name">${escapeHtml(s.currentPlay)}</span>`;
+            if (s.currentTask) bc += ` › <span class="task-name">${escapeHtml(s.currentTask)}</span>`;
+            dom.stripBreadcrumb.innerHTML = bc;
+        }
+        if (s.taskCount > 0) dom.stripTaskCount.textContent = `TASK ${s.taskCount}`;
+        updateChips(s.hostStatuses);
+    }
+
+    function updateChips(hostStatuses) {
+        const existing = {};
+        dom.stripChips.querySelectorAll('.host-chip').forEach(c => { existing[c.dataset.host] = c; });
+        for (const [host, status] of Object.entries(hostStatuses)) {
+            if (existing[host]) {
+                existing[host].className = `host-chip status-${status}`;
+            } else {
+                const chip = document.createElement('span');
+                chip.className = `host-chip status-${status}`;
+                chip.dataset.host = host;
+                chip.innerHTML = `<span class="host-chip__dot"></span><span class="host-chip__name">${escapeHtml(host)}</span>`;
+                dom.stripChips.appendChild(chip);
+            }
+        }
+    }
+
+    function renderRecapCard(recap) {
+        dom.terminalRecap.hidden = false;
+        let html = '<div class="recap-card__title">PLAY RECAP</div><div class="recap-card__rows">';
+        for (const row of recap) {
+            let cls = 'recap--clean';
+            if (row.failed > 0 || row.unreachable > 0) cls = 'recap--failed';
+            else if (row.changed > 0) cls = 'recap--changed';
+            html += `<div class="recap-row ${cls}">
+                <span class="recap-row__host">${escapeHtml(row.host)}</span>
+                <span class="recap-row__stat stat-ok">ok=${row.ok}</span>
+                <span class="recap-row__stat stat-changed">changed=${row.changed}</span>
+                <span class="recap-row__stat stat-failed">failed=${row.failed}</span>
+                <span class="recap-row__stat">unreachable=${row.unreachable}</span>
+                <span class="recap-row__stat">skipped=${row.skipped}</span>
+            </div>`;
+        }
+        html += '</div>';
+        dom.terminalRecap.innerHTML = html;
+    }
+
+    function renderVerdictPanel(data) {
+        const status = (data.status || 'unavailable').toLowerCase();
+        const verdictMap = { ok: 'verdict--ok', degraded: 'verdict--degraded', fail: 'verdict--fail', unavailable: 'verdict--unavailable' };
+        const cls = verdictMap[status] || 'verdict--unavailable';
+        const labelMap = { ok: 'AI VERDICT: OK', degraded: 'AI VERDICT: DEGRADED', fail: 'AI VERDICT: FAIL', unavailable: 'AI VERDICT: UNAVAILABLE' };
+        dom.verdictHeader.className = `verdict__header ${cls}`;
+        dom.verdictLabel.textContent = labelMap[status] || 'AI VERDICT';
+        dom.terminalVerdict.hidden = false;
+
+        let html = '';
+        if (data.error) {
+            html = `<div class="verdict__summary">${escapeHtml(data.error)}</div>`;
+        } else {
+            if (data.summary) html += `<div class="verdict__summary">${escapeHtml(data.summary)}</div>`;
+            if (data.checks && typeof data.checks === 'object') {
+                html += '<table class="verdict__checks">';
+                for (const [k, v] of Object.entries(data.checks)) {
+                    const vs = String(v).toLowerCase();
+                    const vCls = vs === 'ok' || vs === 'pass' ? 'check--ok' : (vs === 'fail' || vs === 'failed' ? 'check--fail' : 'check--warn');
+                    html += `<tr><td>${escapeHtml(k)}</td><td class="${vCls}">${escapeHtml(String(v))}</td></tr>`;
+                }
+                html += '</table>';
+            }
+            if (data.concerns && Array.isArray(data.concerns) && data.concerns.length) {
+                html += '<ul class="verdict__concerns">';
+                for (const c of data.concerns) html += `<li>${escapeHtml(c)}</li>`;
+                html += '</ul>';
+            }
+            if (data.actions && Array.isArray(data.actions) && data.actions.length) {
+                html += '<div class="verdict__section-label">Proposed remediations:</div>';
+                html += '<ul class="verdict__actions">';
+                for (const a of data.actions) {
+                    const targets = Array.isArray(a.targets) ? a.targets.join(', ') : '';
+                    html += `<li><span class="verdict__action-type">${escapeHtml(a.type)}</span>: ${escapeHtml(targets)} &mdash; ${escapeHtml(a.reason || '')}</li>`;
+                }
+                html += '</ul>';
+            }
+            if (data.fired_actions && Array.isArray(data.fired_actions) && data.fired_actions.length) {
+                html += '<div class="verdict__section-label">Auto-remediation fired:</div>';
+                html += '<ul class="verdict__actions verdict__actions--fired">';
+                for (const fa of data.fired_actions) {
+                    const targets = Array.isArray(fa.targets) ? fa.targets.join(', ') : '';
+                    html += `<li><span class="verdict__action-type">${escapeHtml(fa.type)}</span>: ${escapeHtml(targets)}`;
+                    if (fa.job_id) {
+                        html += ` <button class="verdict__job-link" data-job-id="${escapeHtml(fa.job_id)}">[view job]</button>`;
+                    }
+                    html += '</li>';
+                }
+                html += '</ul>';
+            }
+            if (!data.summary && !data.checks && !data.concerns && !data.actions && !data.fired_actions) {
+                html = `<pre style="font-size:10px;color:var(--text-tertiary)">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+            }
+        }
+        dom.verdictBody.innerHTML = html;
+
+        // Wire view-job links in verdict
+        dom.verdictBody.querySelectorAll('.verdict__job-link[data-job-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                openTerminal(btn.dataset.jobId);
+            });
+        });
+    }
+
+    const HEALTH_PLAYBOOKS = new Set(['rolling-restart', 'node-reboot', 'drain-node', 'undrain-node']);
+
+    async function renderHealthPanel() {
+        if (!dom.terminalHealth || !dom.healthBody) return;
+        dom.terminalHealth.hidden = false;
+        dom.healthBody.innerHTML = '<div class="health__loading">Loading health data...</div>';
+
+        let haHtml = '';
+        let nfsHtml = '';
+
+        try {
+            const nodeData = await api.getNodes();
+            const nodes = (nodeData.nodes || []).filter(n => n.type !== 'pbs');
+            haHtml = '<div class="health__section-title">HA STATUS</div>';
+            haHtml += '<table class="health__table">';
+            haHtml += '<thead><tr><th>NODE</th><th>MASTER</th><th>LRM STATE</th><th>SERVICES</th><th>MAINT</th></tr></thead><tbody>';
+            for (const n of nodes) {
+                const master = n.is_ha_master ? '<span class="node-card__master-badge">YES</span>' : '&mdash;';
+                const lrm = escapeHtml(n.ha_lrm_state || 'unknown');
+                const pinned = n.ha_services_pinned != null ? n.ha_services_pinned : '?';
+                const maint = n.maintenance ? '<span class="health__badge health__badge--warn">YES</span>' : '&mdash;';
+                haHtml += `<tr><td>${escapeHtml(n.name)}</td><td>${master}</td><td>${lrm}</td><td>${pinned}</td><td>${maint}</td></tr>`;
+            }
+            haHtml += '</tbody></table>';
+        } catch (err) {
+            haHtml = `<div class="health__error">Failed to load HA status: ${escapeHtml(err.message)}</div>`;
+        }
+
+        try {
+            const nfsData = await api.getNfsState();
+            const clients = nfsData.clients || [];
+            nfsHtml = '<div class="health__section-title">NFS MOUNTS</div>';
+            nfsHtml += '<table class="health__table">';
+            nfsHtml += '<thead><tr><th>HOST</th><th>MOUNT</th><th>STATUS</th></tr></thead><tbody>';
+            for (const client of clients) {
+                for (const mount of (client.mounts || [])) {
+                    const dot = mount.ok
+                        ? '<span class="health__dot health__dot--ok"></span>'
+                        : '<span class="health__dot health__dot--fail"></span>';
+                    nfsHtml += `<tr><td>${escapeHtml(client.host)}</td><td>${escapeHtml(mount.target)}</td><td>${dot} ${mount.ok ? 'OK' : 'MISSING'}</td></tr>`;
+                }
+            }
+            if (!clients.length) {
+                nfsHtml += '<tr><td colspan="3" class="health__empty">No NFS client data available.</td></tr>';
+            }
+            nfsHtml += '</tbody></table>';
+        } catch (err) {
+            nfsHtml = `<div class="health__error">Failed to load NFS state: ${escapeHtml(err.message)}</div>`;
+        }
+
+        dom.healthBody.innerHTML = haHtml + nfsHtml;
+    }
+
+    function applyLineFilter() {
+        if (!dom.filterOkLines || !dom.filterOkLines.checked) {
+            dom.terminalOutput.textContent = _rawLines.join('\n');
+        } else {
+            dom.terminalOutput.textContent = _rawLines.filter(l => !/^ok:\s/.test(l)).join('\n');
+        }
+    }
+
+    function appendOutputLine(line) {
+        _rawLines.push(line);
+        if (dom.filterOkLines && dom.filterOkLines.checked && /^ok:\s/.test(line)) return;
+        const body = dom.terminalBody;
+        const wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+        dom.terminalOutput.textContent += line + '\n';
+        if (wasAtBottom) {
+            requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+        }
+    }
 
     function openTerminal(jobId) {
         if (state.activeSSE) {
@@ -269,10 +616,12 @@
             state.activeSSE = null;
         }
 
+        _currentJobId = jobId;
+        resetTerminalStrip();
+
         const job = state.jobs.find(j => j.id === jobId);
-        const hosts = job && job.hosts && job.hosts.length > 0
-            ? job.hosts.join(', ')
-            : 'cluster';
+        _currentPlaybook = job ? job.playbook : null;
+        const hosts = job && job.hosts && job.hosts.length > 0 ? job.hosts.join(', ') : 'cluster';
         dom.terminalTitle.textContent = job
             ? `JOB // ${job.playbook} // ${hosts}`
             : `JOB // ${jobId.substring(0, 8)}`;
@@ -280,14 +629,29 @@
         dom.terminalStatus.textContent = 'CONNECTING';
         dom.terminalStatus.className = 'terminal__status';
         dom.terminalOverlay.hidden = false;
+        dom.terminalClose.focus();
+
+        if (job && job.verify) renderVerdictPanel(job.verify);
+        if (job && job.status === 'completed' && _currentPlaybook && HEALTH_PLAYBOOKS.has(_currentPlaybook)) {
+            renderHealthPanel();
+        }
 
         const sse = api.streamJob(jobId);
         state.activeSSE = sse;
+
+        const isActive = job && (job.status === 'running' || job.status === 'queued');
+        if (isActive) {
+            dom.terminalCancel.hidden = false;
+            dom.terminalCancel.disabled = false;
+        }
 
         sse.addEventListener('open', () => {
             if (job && (job.status === 'running' || job.status === 'queued')) {
                 dom.terminalStatus.textContent = 'RUNNING';
                 dom.terminalStatus.className = 'terminal__status running';
+                _termStartedAt = job.started_at ? new Date(job.started_at).getTime() : Date.now();
+                startElapsedTimer();
+                resetHeartbeat();
             }
         });
 
@@ -295,9 +659,17 @@
             if (dom.terminalStatus.textContent === 'CONNECTING') {
                 dom.terminalStatus.textContent = 'RUNNING';
                 dom.terminalStatus.className = 'terminal__status running';
+                if (!_termStartedAt) _termStartedAt = Date.now();
+                startElapsedTimer();
             }
-            dom.terminalOutput.textContent += e.data + '\n';
-            autoScroll();
+            resetHeartbeat();
+            const line = e.data;
+            appendOutputLine(line);
+            const parsed = _termParser.feed(line);
+            if (parsed) {
+                updateStripFromParser();
+                if (parsed.type === 'recap_row') renderRecapCard(_termParser.getState().recap);
+            }
         });
 
         sse.addEventListener('status', (e) => {
@@ -309,12 +681,23 @@
         });
 
         sse.addEventListener('done', (e) => {
+            clearInterval(_elapsedTimer);
+            clearInterval(_heartbeatTimer);
+            dom.stripHeartbeat.hidden = true;
+            dom.terminalCancel.hidden = true;
             try {
                 const data = JSON.parse(e.data);
-                const label = data.status === 'completed' ? 'COMPLETED' : `FAILED (rc=${data.return_code})`;
+                let label;
+                if (data.status === 'completed') label = 'COMPLETED';
+                else if (data.status === 'cancelled') label = data.cancel_reason ? `CANCELLED (${data.cancel_reason})` : 'CANCELLED';
+                else label = `FAILED (rc=${data.return_code})`;
                 dom.terminalStatus.textContent = label;
                 dom.terminalStatus.className = `terminal__status ${data.status}`;
-                dom.terminalOutput.textContent += `\n--- ${label} ---\n`;
+                appendOutputLine(`\n--- ${label} ---`);
+                MooCommon.sendNotification('Herdmon', `${job ? job.playbook : jobId} — ${label}`);
+                if (data.status === 'completed' && _currentPlaybook && HEALTH_PLAYBOOKS.has(_currentPlaybook)) {
+                    renderHealthPanel();
+                }
             } catch (_) {}
             sse.close();
             state.activeSSE = null;
@@ -322,9 +705,16 @@
             loadNodes();
         });
 
+        sse.addEventListener('verify_report', (e) => {
+            try { renderVerdictPanel(JSON.parse(e.data)); } catch (_) {}
+        });
+
         sse.addEventListener('error', () => {
+            clearInterval(_elapsedTimer);
+            clearInterval(_heartbeatTimer);
             dom.terminalStatus.textContent = 'DISCONNECTED';
             dom.terminalStatus.className = 'terminal__status failed';
+            dom.terminalCancel.hidden = true;
             sse.close();
             state.activeSSE = null;
         });
@@ -333,9 +723,7 @@
     function autoScroll() {
         const body = dom.terminalBody;
         const isNearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
-        if (isNearBottom) {
-            body.scrollTop = body.scrollHeight;
-        }
+        if (isNearBottom) body.scrollTop = body.scrollHeight;
     }
 
     function closeTerminal() {
@@ -343,6 +731,8 @@
             state.activeSSE.close();
             state.activeSSE = null;
         }
+        clearInterval(_elapsedTimer);
+        clearInterval(_heartbeatTimer);
         dom.terminalOverlay.hidden = true;
     }
 
@@ -388,62 +778,279 @@
         }, 3000);
     }
 
+    // ---- Version check / UPDATE APP ----
+
+    async function checkAppVersion() {
+        try {
+            const res = await fetch('/api/app/version');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.behind) {
+                dom.updateAppBtn.classList.add('has-update');
+            } else {
+                dom.updateAppBtn.classList.remove('has-update');
+            }
+        } catch (_) {}
+    }
+
+    async function triggerUpdateApp() {
+        try {
+            const result = await api.createJob('update-herdmon', []);
+            await pollJobs();
+            openTerminal(result.job_id);
+            startJobPolling();
+        } catch (err) {
+            showConfirm('Error', 'Failed to start update: ' + err.message, null);
+        }
+    }
+
     // ---- Event Binding ----
 
     function bindEvents() {
+        MooCommon.initConfirmModal();
+
         dom.refreshNodes.addEventListener('click', loadNodes);
 
-        dom.rollingRestart.addEventListener('click', () => {
+        dom.remediateNfs.addEventListener('click', () => {
             showConfirm(
-                'Rolling Update & Restart All',
-                'This will update and reboot pve1, pve2, and pve3 one at a time. All CTs/VMs will be gracefully shut down and restarted on each node. This will take a while.',
-                runRollingRestart
+                'Remediate NFS',
+                'Remount NFS on 6 clients (paperless, nzbget, sonarr-hd, sonarr-4k, radarr, plex-lxc) and kick their services?',
+                runRemediateNfs
             );
         });
 
-        dom.confirmCancel.addEventListener('click', hideConfirm);
-        dom.confirmProceed.addEventListener('click', () => {
-            const fn = state.pendingConfirm;
-            hideConfirm();
-            if (fn) fn();
+        dom.rollingRestart.addEventListener('click', () => {
+            const nodeNames = state.nodes.map(n => n.name).join(', ') || 'all nodes';
+            showConfirm(
+                'Rolling Update & Restart All',
+                `This will update and reboot ${nodeNames} one at a time. All CTs/VMs will be gracefully shut down and restarted on each node. This will take a while.`,
+                runRollingRestart,
+                { proceedClass: 'btn--danger' }
+            );
         });
-        dom.confirmOverlay.addEventListener('click', (e) => {
-            if (e.target === dom.confirmOverlay) hideConfirm();
+
+        dom.updateAppBtn.addEventListener('click', () => {
+            showConfirm(
+                'Self-update Herdmon',
+                'This will git pull and restart the service. Your connection may drop briefly.',
+                triggerUpdateApp,
+                { proceedClass: 'btn--warning' }
+            );
         });
+
+        dom.terminalCancel.addEventListener('click', async () => {
+            if (!_currentJobId) return;
+            dom.terminalCancel.disabled = true;
+            try { await fetch(`/api/jobs/${_currentJobId}/cancel`, { method: 'POST' }); } catch (_) {}
+        });
+
+        if (dom.filterOkLines) {
+            dom.filterOkLines.addEventListener('change', applyLineFilter);
+        }
+
+        dom.verdictToggle.addEventListener('click', () => {
+            _verdictCollapsed = !_verdictCollapsed;
+            dom.verdictBody.hidden = _verdictCollapsed;
+            dom.verdictToggle.classList.toggle('collapsed', _verdictCollapsed);
+        });
+
+        if (dom.healthToggle) {
+            dom.healthToggle.addEventListener('click', () => {
+                _healthCollapsed = !_healthCollapsed;
+                dom.healthBody.hidden = _healthCollapsed;
+                dom.healthToggle.classList.toggle('collapsed', _healthCollapsed);
+            });
+        }
+
+        if (dom.maintenancePill) {
+            dom.maintenancePill.addEventListener('click', openMaintModal);
+        }
+
+        if (dom.maintModalClose) dom.maintModalClose.addEventListener('click', closeMaintModal);
+        if (dom.maintModalCancel) dom.maintModalCancel.addEventListener('click', closeMaintModal);
+        if (dom.maintModalEnable) dom.maintModalEnable.addEventListener('click', doEnableMaintenance);
+        if (dom.maintModalDisable) dom.maintModalDisable.addEventListener('click', doDisableMaintenance);
+
+        if (dom.maintTtl) {
+            dom.maintTtl.addEventListener('input', () => {
+                dom.maintTtlVal.textContent = `${dom.maintTtl.value}m`;
+            });
+        }
+
+        if (dom.maintModalOverlay) {
+            dom.maintModalOverlay.addEventListener('click', (e) => {
+                if (e.target === dom.maintModalOverlay) closeMaintModal();
+            });
+            dom.maintModalOverlay.addEventListener('keydown', (e) => {
+                if (dom.maintModalOverlay.hidden) return;
+                if (e.key === 'Escape') { closeMaintModal(); return; }
+                if (e.key !== 'Tab') return;
+                const focusable = Array.from(dom.maintModalOverlay.querySelectorAll('button:not([disabled]):not([hidden]), textarea, select, input'));
+                if (!focusable.length) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault(); last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault(); first.focus();
+                }
+            });
+        }
 
         dom.terminalClose.addEventListener('click', closeTerminal);
         dom.terminalOverlay.addEventListener('click', (e) => {
             if (e.target === dom.terminalOverlay) closeTerminal();
         });
 
+        dom.terminalOverlay.addEventListener('keydown', (e) => {
+            if (dom.terminalOverlay.hidden) return;
+            if (e.key !== 'Tab') return;
+            const focusable = Array.from(dom.terminalOverlay.querySelectorAll('button:not([disabled]):not([hidden])'));
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault(); last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault(); first.focus();
+            }
+        });
+
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                if (!dom.confirmOverlay.hidden) hideConfirm();
-                else if (!dom.terminalOverlay.hidden) closeTerminal();
+                const confirmOverlay = document.getElementById('confirmOverlay');
+                if (confirmOverlay && !confirmOverlay.hidden) { hideConfirm(); return; }
+                if (dom.maintModalOverlay && !dom.maintModalOverlay.hidden) { closeMaintModal(); return; }
+                if (!dom.terminalOverlay.hidden) closeTerminal();
             }
         });
     }
 
     // ---- Utilities ----
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
+    const escapeHtml = MooCommon.escapeHtml;
+    const formatDuration = MooCommon.formatDuration;
 
     // ---- Init ----
+
+    // ---- Maintenance Pill ----
+
+    let _maintState = null;
+
+    function updateMaintenancePill(data) {
+        _maintState = data;
+        const pill = dom.maintenancePill;
+        if (!pill) return;
+        if (data && data.enabled) {
+            let label = 'MAINT';
+            if (data.scope && data.scope.host) label += ` \u00b7 ${data.scope.host}`;
+            else if (data.scope && Object.keys(data.scope).length === 0) label += ' \u00b7 cluster';
+            if (data.expiresAt) {
+                const remaining = Math.max(0, Math.round((new Date(data.expiresAt).getTime() - Date.now()) / 60000));
+                label += ` \u00b7 ${remaining}m`;
+            }
+            pill.textContent = label;
+            pill.classList.add('maint-pill--active');
+            document.body.classList.add('body--maint');
+        } else {
+            pill.textContent = 'MAINT: off';
+            pill.classList.remove('maint-pill--active');
+            document.body.classList.remove('body--maint');
+        }
+    }
+
+    async function fetchMaintenance() {
+        try {
+            const data = await api.getMaintenance();
+            updateMaintenancePill(data);
+        } catch (_) {
+            // OpenClaw may be offline; ignore silently
+        }
+    }
+
+    function populateScopeSelect() {
+        if (!dom.maintScope) return;
+        let html = '<option value="">Whole cluster</option>';
+        for (const node of state.nodes) {
+            if (node.type !== 'pbs') {
+                html += `<option value="${escapeHtml(node.name)}">${escapeHtml(node.name)}</option>`;
+            }
+        }
+        dom.maintScope.innerHTML = html;
+    }
+
+    function openMaintModal() {
+        populateScopeSelect();
+        const isEnabled = _maintState && _maintState.enabled;
+        dom.maintModalDisable.hidden = !isEnabled;
+        if (isEnabled && _maintState.reason) {
+            dom.maintReason.value = _maintState.reason;
+        } else {
+            dom.maintReason.value = '';
+        }
+        dom.maintTtl.value = '15';
+        dom.maintTtlVal.textContent = '15m';
+        dom.maintModalOverlay.hidden = false;
+        dom.maintReason.focus();
+    }
+
+    function closeMaintModal() {
+        dom.maintModalOverlay.hidden = true;
+    }
+
+    async function doEnableMaintenance() {
+        const reason = dom.maintReason.value.trim() || 'manual maintenance';
+        const scopeHost = dom.maintScope.value;
+        const ttl = parseInt(dom.maintTtl.value, 10) || 15;
+        const scope = scopeHost ? { host: scopeHost } : {};
+        dom.maintModalEnable.disabled = true;
+        try {
+            const data = await api.enableMaintenance({ reason, scope, ttlMinutes: ttl });
+            updateMaintenancePill(data);
+            closeMaintModal();
+        } catch (err) {
+            showConfirm('Error', 'Failed to enable maintenance: ' + err.message, null);
+        } finally {
+            dom.maintModalEnable.disabled = false;
+        }
+    }
+
+    async function doDisableMaintenance() {
+        dom.maintModalDisable.disabled = true;
+        try {
+            await api.disableMaintenance();
+            await fetchMaintenance();
+            closeMaintModal();
+        } catch (err) {
+            showConfirm('Error', 'Failed to disable maintenance: ' + err.message, null);
+        } finally {
+            dom.maintModalDisable.disabled = false;
+        }
+    }
+
+    async function loadPlaybooks() {
+        try {
+            const data = await api.getPlaybooks();
+            state.playbooks = data.playbooks || [];
+        } catch (err) {
+            console.error('Failed to load playbooks:', err);
+        }
+    }
 
     async function init() {
         bindEvents();
 
         await Promise.allSettled([
+            loadPlaybooks(),
             loadNodes(),
             pollJobs(),
         ]);
 
         state.refreshInterval = setInterval(loadNodes, 30000);
+        checkAppVersion();
+        setInterval(checkAppVersion, 5 * 60 * 1000);
+        fetchMaintenance();
+        state.maintenanceInterval = setInterval(fetchMaintenance, 30000);
 
         const hasActive = state.jobs.some(j => j.status === 'running' || j.status === 'queued');
         if (hasActive) startJobPolling();

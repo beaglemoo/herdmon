@@ -38,12 +38,30 @@ class PlaybookEntry(BaseModel):
     groups: list[str] = []
     cluster_operation: bool = False
     extra_args: list[str] = []
+    chain: list[str] = []
+
+
+class OpenClawConfig(BaseModel):
+    enabled: bool = False
+    verify_url: str = "http://192.168.2.226:9090/verify"
+    maintenance_base_url: str = "http://192.168.2.226:9090"
+    timeout_seconds: int = 120
+    # Map playbook name -> verification kind ("proxmox_node", "lxc", "cluster")
+    kinds: dict[str, str] = {}
+
+
+class AppConfig(BaseModel):
+    repo_dir: str = "/root/moo-updater"
+    tracking_branch: str = "origin/main"
+    remote_check_ttl_seconds: int = 300
 
 
 class Settings(BaseModel):
     server: ServerConfig = ServerConfig()
     patchmon: PatchmonConfig = PatchmonConfig()
     ansible: AnsibleConfig = AnsibleConfig()
+    openclaw: OpenClawConfig = OpenClawConfig()
+    app: AppConfig = AppConfig()
     playbooks: list[PlaybookEntry] = []
     cluster_nodes: list[ClusterNode] = []
 

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>moo-updater // cluster ops</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/style.css?v=1776710000">
 </head>
 <body>
     <div class="grid-overlay"></div>
@@ -20,8 +20,12 @@
             </nav>
         </div>
         <div class="top-bar__status">
+            <button class="btn--app-update" id="updateAppBtn">UPDATE APP</button>
+            <span class="top-bar__divider"></span>
+            <button class="maint-pill" id="maintenancePill" aria-label="Toggle OpenClaw maintenance mode">MAINT: off</button>
+            <span class="top-bar__divider"></span>
             <span class="top-bar__indicator" id="connectionIndicator"></span>
-            <span class="top-bar__label" id="connectionLabel">CONNECTING</span>
+            <span class="top-bar__label" id="connectionLabel" aria-live="polite">CONNECTING</span>
             <span class="top-bar__divider"></span>
             <span class="top-bar__label" id="lastRefresh">--:--:--</span>
         </div>
@@ -45,7 +49,9 @@
         <section class="panel panel--actions">
             <div class="action-bar">
                 <div class="action-bar__left">
-                    <button class="btn btn--warning" id="rollingRestart">ROLLING UPDATE &amp; RESTART ALL</button>
+                    <button class="btn btn--danger" id="rollingRestart">ROLLING UPDATE &amp; RESTART ALL</button>
+                    <span class="action-bar__divider-v"></span>
+                    <button class="btn btn--ghost" id="remediateNfs" aria-label="Remount NFS on all 6 NFS clients and kick their services">REMEDIATE NFS</button>
                 </div>
                 <div class="action-bar__right">
                     <span class="action-bar__job-count" id="activeJobCount"></span>
@@ -63,20 +69,84 @@
         </section>
     </main>
 
-    <div class="terminal-overlay" id="terminalOverlay" hidden>
+    <div class="terminal-overlay" id="terminalOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="terminalTitle">
         <div class="terminal">
             <div class="terminal__header">
                 <div class="terminal__title" id="terminalTitle">JOB OUTPUT</div>
-                <div class="terminal__status" id="terminalStatus"></div>
-                <button class="terminal__close" id="terminalClose">&times;</button>
+                <div class="terminal__status" id="terminalStatus" aria-live="polite"></div>
+                <button class="btn btn--ghost btn--sm terminal__cancel" id="terminalCancel" hidden>CANCEL</button>
+                <button class="terminal__close" id="terminalClose" aria-label="Close">&times;</button>
             </div>
+            <div class="terminal__strip" id="terminalStrip" hidden>
+                <div class="strip__breadcrumb" id="stripBreadcrumb"></div>
+                <div class="strip__meta">
+                    <span class="strip__elapsed" id="stripElapsed"></span>
+                    <span class="strip__task-count" id="stripTaskCount"></span>
+                    <label class="strip__filter-toggle">
+                        <input type="checkbox" id="filterOkLines">
+                        <span>HIDE OK</span>
+                    </label>
+                </div>
+                <div class="strip__chips" id="stripChips"></div>
+                <div class="strip__heartbeat" id="stripHeartbeat" hidden>Waiting for output...</div>
+            </div>
+            <div class="terminal__recap" id="terminalRecap" hidden></div>
             <div class="terminal__body" id="terminalBody">
                 <pre class="terminal__output" id="terminalOutput"></pre>
+            </div>
+            <div class="terminal__verdict" id="terminalVerdict" hidden>
+                <div class="verdict__header" id="verdictHeader">
+                    <span class="verdict__label" id="verdictLabel">AI VERDICT</span>
+                    <button class="verdict__toggle" id="verdictToggle" aria-label="Toggle verdict">&#9660;</button>
+                </div>
+                <div class="verdict__body" id="verdictBody"></div>
+            </div>
+            <div class="terminal__health" id="terminalHealth" hidden>
+                <div class="health__header">
+                    <span class="health__label">POST-REBOOT HEALTH</span>
+                    <button class="verdict__toggle" id="healthToggle" aria-label="Toggle health panel">&#9660;</button>
+                </div>
+                <div class="health__body" id="healthBody">
+                    <div class="health__loading">Loading health data...</div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="confirm-overlay" id="confirmOverlay" hidden>
+    <div class="maint-modal-overlay" id="maintModalOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="maintModalTitle">
+        <div class="maint-modal">
+            <div class="maint-modal__header">
+                <span class="maint-modal__title" id="maintModalTitle">MAINTENANCE MODE</span>
+                <button class="terminal__close" id="maintModalClose" aria-label="Close">&times;</button>
+            </div>
+            <div class="maint-modal__body">
+                <div class="maint-modal__row">
+                    <label class="maint-modal__label" for="maintReason">REASON</label>
+                    <textarea class="maint-modal__textarea" id="maintReason" rows="2" placeholder="e.g. scheduled node drain"></textarea>
+                </div>
+                <div class="maint-modal__row">
+                    <label class="maint-modal__label" for="maintScope">SCOPE</label>
+                    <select class="maint-modal__select" id="maintScope">
+                        <option value="">Whole cluster</option>
+                    </select>
+                </div>
+                <div class="maint-modal__row">
+                    <label class="maint-modal__label" for="maintTtl">TTL (MINUTES)</label>
+                    <div class="maint-modal__ttl-wrap">
+                        <input type="range" class="maint-modal__slider" id="maintTtl" min="5" max="60" step="5" value="15">
+                        <span class="maint-modal__ttl-val" id="maintTtlVal">15m</span>
+                    </div>
+                </div>
+            </div>
+            <div class="maint-modal__footer">
+                <button class="btn btn--ghost" id="maintModalCancel">CANCEL</button>
+                <button class="btn btn--danger" id="maintModalDisable" hidden>DISABLE MAINTENANCE</button>
+                <button class="btn btn--warning" id="maintModalEnable">ENABLE MAINTENANCE</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="confirm-overlay" id="confirmOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
         <div class="confirm-dialog">
             <div class="confirm-dialog__title" id="confirmTitle">Confirm Action</div>
             <div class="confirm-dialog__message" id="confirmMessage"></div>
@@ -87,6 +157,8 @@
         </div>
     </div>
 
-    <script src="/js/cluster.js"></script>
+    <script src="/js/common.js?v=1776710000"></script>
+    <script src="/js/ansible-parser.js?v=1776710000"></script>
+    <script src="/js/cluster.js?v=1776710000"></script>
 </body>
 </html>
