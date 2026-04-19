@@ -1,6 +1,7 @@
 import asyncio
 import re
 import time
+from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
@@ -14,6 +15,19 @@ cluster_nodes: list[ClusterNode] = []
 # Cache
 _cache: dict = {"data": None, "timestamp": 0}
 _CACHE_TTL = 15
+
+# NFS client config: host -> expected mount targets
+_NFS_CLIENTS = [
+    {"host": "paperless-ngx", "ip": "192.168.2.56",  "mounts": ["/opt/paperless_data", "/mnt/paperless-intake"]},
+    {"host": "nzbget",        "ip": "192.168.2.229", "mounts": ["/mnt/moo"]},
+    {"host": "sonarr-hd",     "ip": "192.168.2.230", "mounts": ["/mnt/media", "/mnt/moo", "/mnt/downloads/completed"]},
+    {"host": "sonarr-4k",     "ip": "192.168.2.231", "mounts": ["/mnt/media", "/mnt/moo", "/mnt/downloads/completed"]},
+    {"host": "radarr",        "ip": "192.168.2.232", "mounts": ["/mnt/media", "/mnt/moo", "/mnt/downloads/completed"]},
+    {"host": "plex-lxc",      "ip": "192.168.2.123", "mounts": ["/mnt/media"]},
+]
+
+_nfs_cache: dict = {"data": None, "timestamp": 0}
+_NFS_CACHE_TTL = 30
 
 
 def _parse_ha_status(ha_lines: list[str], node_name: str) -> dict:
@@ -180,3 +194,65 @@ async def get_cluster_nodes():
     _cache["timestamp"] = now
 
     return {"nodes": results}
+
+
+async def _query_nfs_client(client: dict) -> dict:
+    """SSH to an NFS client and check which mounts are present."""
+    host = client["host"]
+    ip = client["ip"]
+    expected = set(client["mounts"])
+
+    entry: dict = {"host": host, "ip": ip, "mounts": [], "ok": False}
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ssh",
+            "-o", "ConnectTimeout=5",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "BatchMode=yes",
+            f"root@{ip}",
+            "findmnt -t nfs,nfs4 -n -o TARGET,FSTYPE",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+    except (asyncio.TimeoutError, Exception):
+        return entry
+
+    found_targets: set[str] = set()
+    mounts = []
+    for line in stdout.decode("utf-8", errors="replace").strip().split("\n"):
+        parts = line.split()
+        if len(parts) >= 2:
+            target, fstype = parts[0], parts[1]
+            found_targets.add(target)
+            mounts.append({"target": target, "fstype": fstype, "ok": target in expected})
+        elif len(parts) == 1 and parts[0]:
+            target = parts[0]
+            found_targets.add(target)
+            mounts.append({"target": target, "fstype": "unknown", "ok": target in expected})
+
+    entry["mounts"] = mounts
+    entry["ok"] = expected.issubset(found_targets)
+    return entry
+
+
+@router.get("/cluster/nfs-state")
+async def get_nfs_state():
+    now = time.time()
+
+    if _nfs_cache["data"] is not None and (now - _nfs_cache["timestamp"]) < _NFS_CACHE_TTL:
+        return _nfs_cache["data"]
+
+    tasks = [_query_nfs_client(c) for c in _NFS_CLIENTS]
+    clients = await asyncio.gather(*tasks)
+
+    data = {
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "clients": list(clients),
+    }
+
+    _nfs_cache["data"] = data
+    _nfs_cache["timestamp"] = now
+
+    return data
