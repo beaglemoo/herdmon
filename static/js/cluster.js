@@ -406,8 +406,12 @@
     function appendOutputLine(line) {
         _rawLines.push(line);
         if (dom.filterOkLines && dom.filterOkLines.checked && /^ok:\s/.test(line)) return;
+        const body = dom.terminalBody;
+        const wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
         dom.terminalOutput.textContent += line + '\n';
-        requestAnimationFrame(() => autoScroll());
+        if (wasAtBottom) {
+            requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+        }
     }
 
     function openTerminal(jobId) {
