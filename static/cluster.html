@@ -20,8 +20,10 @@
             </nav>
         </div>
         <div class="top-bar__status">
+            <button class="btn--app-update" id="updateAppBtn">UPDATE APP</button>
+            <span class="top-bar__divider"></span>
             <span class="top-bar__indicator" id="connectionIndicator"></span>
-            <span class="top-bar__label" id="connectionLabel">CONNECTING</span>
+            <span class="top-bar__label" id="connectionLabel" aria-live="polite">CONNECTING</span>
             <span class="top-bar__divider"></span>
             <span class="top-bar__label" id="lastRefresh">--:--:--</span>
         </div>
@@ -45,7 +47,7 @@
         <section class="panel panel--actions">
             <div class="action-bar">
                 <div class="action-bar__left">
-                    <button class="btn btn--warning" id="rollingRestart">ROLLING UPDATE &amp; RESTART ALL</button>
+                    <button class="btn btn--danger" id="rollingRestart">ROLLING UPDATE &amp; RESTART ALL</button>
                 </div>
                 <div class="action-bar__right">
                     <span class="action-bar__job-count" id="activeJobCount"></span>
@@ -63,15 +65,37 @@
         </section>
     </main>
 
-    <div class="terminal-overlay" id="terminalOverlay" hidden>
+    <div class="terminal-overlay" id="terminalOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="terminalTitle">
         <div class="terminal">
             <div class="terminal__header">
                 <div class="terminal__title" id="terminalTitle">JOB OUTPUT</div>
-                <div class="terminal__status" id="terminalStatus"></div>
-                <button class="terminal__close" id="terminalClose">&times;</button>
+                <div class="terminal__status" id="terminalStatus" aria-live="polite"></div>
+                <button class="btn btn--ghost btn--sm terminal__cancel" id="terminalCancel" hidden>CANCEL</button>
+                <button class="terminal__close" id="terminalClose" aria-label="Close">&times;</button>
             </div>
+            <div class="terminal__strip" id="terminalStrip" hidden>
+                <div class="strip__breadcrumb" id="stripBreadcrumb"></div>
+                <div class="strip__meta">
+                    <span class="strip__elapsed" id="stripElapsed"></span>
+                    <span class="strip__task-count" id="stripTaskCount"></span>
+                    <label class="strip__filter-toggle">
+                        <input type="checkbox" id="filterOkLines">
+                        <span>HIDE OK</span>
+                    </label>
+                </div>
+                <div class="strip__chips" id="stripChips"></div>
+                <div class="strip__heartbeat" id="stripHeartbeat" hidden>Waiting for output...</div>
+            </div>
+            <div class="terminal__recap" id="terminalRecap" hidden></div>
             <div class="terminal__body" id="terminalBody">
                 <pre class="terminal__output" id="terminalOutput"></pre>
+            </div>
+            <div class="terminal__verdict" id="terminalVerdict" hidden>
+                <div class="verdict__header" id="verdictHeader">
+                    <span class="verdict__label" id="verdictLabel">AI VERDICT</span>
+                    <button class="verdict__toggle" id="verdictToggle" aria-label="Toggle verdict">&#9660;</button>
+                </div>
+                <div class="verdict__body" id="verdictBody"></div>
             </div>
         </div>
     </div>
