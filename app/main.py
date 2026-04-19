@@ -38,8 +38,11 @@ async def lifespan(app: FastAPI):
     await openclaw.start()
     runner.set_post_done_hook(openclaw.on_job_done)
 
+    cluster.start_background_refresh()
+
     yield
 
+    await cluster.stop_background_refresh()
     await openclaw.close()
     await patchmon.close()
 

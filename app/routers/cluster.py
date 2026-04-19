@@ -267,3 +267,51 @@ async def get_nfs_state():
     _nfs_cache["timestamp"] = now
 
     return data
+
+
+# Pre-warm caches in a background task so API handlers never block on SSH.
+# Every REFRESH_INTERVAL we re-run the full node + nfs-state queries in
+# parallel and write the result into the existing caches. The HTTP handlers
+# still check TTLs, so a cold start falls back to the on-demand path.
+_REFRESH_INTERVAL = 20
+_refresh_task: asyncio.Task | None = None
+
+
+async def _refresh_loop():
+    while True:
+        try:
+            now = time.time()
+            node_task = asyncio.gather(*(_query_node(n) for n in cluster_nodes))
+            nfs_task = asyncio.gather(*(_query_nfs_client(c) for c in _NFS_CLIENTS))
+            nodes, clients = await asyncio.gather(node_task, nfs_task)
+            _cache["data"] = list(nodes)
+            _cache["timestamp"] = now
+            _nfs_cache["data"] = {
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "clients": list(clients),
+            }
+            _nfs_cache["timestamp"] = now
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Never let the refresher crash; on-demand fallback handles gaps.
+            pass
+        await asyncio.sleep(_REFRESH_INTERVAL)
+
+
+def start_background_refresh() -> asyncio.Task:
+    global _refresh_task
+    if _refresh_task is None or _refresh_task.done():
+        _refresh_task = asyncio.create_task(_refresh_loop())
+    return _refresh_task
+
+
+async def stop_background_refresh() -> None:
+    global _refresh_task
+    if _refresh_task is not None:
+        _refresh_task.cancel()
+        try:
+            await _refresh_task
+        except asyncio.CancelledError:
+            pass
+        _refresh_task = None
