@@ -14,44 +14,100 @@ ansible:
   max_concurrent_jobs: 3
   command_timeout: 1800
 
-playbooks:
-  - name: "update-all"
-    file: "update-all.yml"
-    description: "Update system packages (apt/dnf) on all Linux hosts"
-    groups: ["debian", "centos", "ubuntu", "lxc", "proxmox"]
+# Herdmon self-update: where the app's git checkout lives, and which
+# remote ref the /api/app/version endpoint compares against.
+app:
+  repo_dir: "/root/moo-updater"
+  tracking_branch: "origin/main"
+  remote_check_ttl_seconds: 300
 
-  - name: "update-lxc-backup"
-    file: "update-lxc-with-backup.yml"
-    description: "Backup LXCs to PBS then update system packages"
+# Optional AI verification via OpenClaw. When enabled, after a job ends
+# the runner POSTs job metadata to OpenClaw's /verify webhook. OpenClaw
+# runs systemd/Uptime Kuma/PVE checks, asks OpenRouter for a verdict,
+# DMs the result to WhatsApp, and returns the report. Herdmon renders
+# the report in the terminal overlay.
+openclaw:
+  enabled: false
+  verify_url: "http://192.168.2.226:9090/verify"
+  timeout_seconds: 120
+  # Map playbook name -> verification kind understood by ops-verify.
+  # Kinds: "proxmox_node", "lxc", "cluster".
+  kinds:
+    node-update: proxmox_node
+    node-reboot: proxmox_node
+    rolling-restart: cluster
+    host-reboot: proxmox_node
+    update-lxc-system: lxc
+    update-lxc-apps: lxc
+    update-lxc-full: lxc
+    update-lxc-backup: lxc
+
+playbooks:
+  # ----- LXC update variants -----
+  - name: "update-lxc-system"
+    file: "update-lxc-system.yml"
+    description: "Update LXC system packages only (apt, no /usr/bin/update)"
     groups: ["lxc"]
 
   - name: "update-lxc-apps"
-    file: "update-lxc-apps.yml"
-    description: "Update LXC applications via community scripts"
+    file: "update-lxc-apps-v2.yml"
+    description: "Update LXC application layer via community-scripts update-apps.sh"
     groups: ["lxc"]
 
-  - name: "rolling-restart"
-    file: "rolling-restart.yml"
-    description: "Rolling update and restart of all Proxmox nodes"
-    groups: ["proxmox"]
-    cluster_operation: true
-    extra_args: ["-e", "confirm_each_node=false"]
+  - name: "update-lxc-full"
+    file: "update-all.yml"
+    description: "Update LXC system packages + community-script apps"
+    groups: ["lxc"]
 
+  - name: "update-lxc-backup"
+    file: "update-lxc-with-backup.yml"
+    description: "PBS backup then full LXC update (apt + apps)"
+    groups: ["lxc"]
+
+  # ----- Proxmox / cluster operations -----
   - name: "node-update"
     file: "update-all.yml"
-    description: "Update packages on a Proxmox node"
+    description: "Update packages on a single Proxmox node"
     groups: ["proxmox"]
 
   - name: "node-reboot"
     file: "rolling-restart.yml"
-    description: "Reboot a Proxmox node (graceful workload shutdown/restart)"
+    description: "Reboot one Proxmox node (graceful workload shutdown + restart)"
     groups: ["proxmox"]
+    extra_args: ["-e", "confirm_each_node=false"]
+
+  - name: "rolling-restart"
+    file: "rolling-restart.yml"
+    description: "Rolling update + restart of all Proxmox nodes"
+    groups: ["proxmox"]
+    cluster_operation: true
     extra_args: ["-e", "confirm_each_node=false"]
 
   - name: "host-reboot"
     file: "reboot-host.yml"
     description: "Simple reboot (PBS or standalone hosts)"
     groups: []
+
+  # ----- Herdmon self-update + chained combos -----
+  - name: "update-herdmon"
+    file: "update-herdmon.yml"
+    description: "Self-update: git pull + restart of this moo-updater service"
+    groups: []
+    cluster_operation: true
+
+  - name: "update-all-pending"
+    file: "update-all.yml"
+    description: "Update every host with pending packages (used by UPDATE ALL PENDING)"
+    groups: ["lxc", "proxmox"]
+
+  # Example of a chained playbook. Running it queues the first job; when
+  # it completes successfully the runner automatically starts the next
+  # playbook in the chain. Chains abort on failure.
+  - name: "update-lxcs-then-app"
+    file: "update-all.yml"
+    description: "Update all LXCs, then self-update Herdmon"
+    groups: ["lxc"]
+    chain: ["update-herdmon"]
 
 cluster_nodes:
   - name: "node1"
