@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>moo-updater // cluster ops</title>
-    <link rel="stylesheet" href="/css/style.css?v=1776700000">
+    <link rel="stylesheet" href="/css/style.css?v=1776710000">
 </head>
 <body>
     <div class="grid-overlay"></div>
@@ -101,6 +101,15 @@
                 </div>
                 <div class="verdict__body" id="verdictBody"></div>
             </div>
+            <div class="terminal__health" id="terminalHealth" hidden>
+                <div class="health__header">
+                    <span class="health__label">POST-REBOOT HEALTH</span>
+                    <button class="verdict__toggle" id="healthToggle" aria-label="Toggle health panel">&#9660;</button>
+                </div>
+                <div class="health__body" id="healthBody">
+                    <div class="health__loading">Loading health data...</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -148,8 +157,8 @@
         </div>
     </div>
 
-    <script src="/js/common.js?v=1776700000"></script>
-    <script src="/js/ansible-parser.js?v=1776700000"></script>
-    <script src="/js/cluster.js?v=1776700000"></script>
+    <script src="/js/common.js?v=1776710000"></script>
+    <script src="/js/ansible-parser.js?v=1776710000"></script>
+    <script src="/js/cluster.js?v=1776710000"></script>
 </body>
 </html>

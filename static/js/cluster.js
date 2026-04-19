@@ -129,6 +129,9 @@
         verdictLabel: $('#verdictLabel'),
         verdictToggle: $('#verdictToggle'),
         verdictBody: $('#verdictBody'),
+        terminalHealth: $('#terminalHealth'),
+        healthToggle: $('#healthToggle'),
+        healthBody: $('#healthBody'),
         updateAppBtn: $('#updateAppBtn'),
         maintenancePill: $('#maintenancePill'),
         maintModalOverlay: $('#maintModalOverlay'),
@@ -372,8 +375,10 @@
     let _heartbeatTimer = null;
     let _termStartedAt = null;
     let _currentJobId = null;
+    let _currentPlaybook = null;
     let _rawLines = [];
     let _verdictCollapsed = false;
+    let _healthCollapsed = false;
 
     function resetTerminalStrip() {
         dom.terminalStrip.hidden = true;
@@ -388,6 +393,10 @@
         dom.verdictBody.hidden = false;
         dom.verdictToggle.classList.remove('collapsed');
         _verdictCollapsed = false;
+        if (dom.terminalHealth) dom.terminalHealth.hidden = true;
+        if (dom.healthToggle) dom.healthToggle.classList.remove('collapsed');
+        _healthCollapsed = false;
+        _currentPlaybook = null;
         clearInterval(_elapsedTimer);
         clearInterval(_heartbeatTimer);
         _elapsedTimer = null;
@@ -493,11 +502,93 @@
                 for (const c of data.concerns) html += `<li>${escapeHtml(c)}</li>`;
                 html += '</ul>';
             }
-            if (!data.summary && !data.checks && !data.concerns) {
+            if (data.actions && Array.isArray(data.actions) && data.actions.length) {
+                html += '<div class="verdict__section-label">Proposed remediations:</div>';
+                html += '<ul class="verdict__actions">';
+                for (const a of data.actions) {
+                    const targets = Array.isArray(a.targets) ? a.targets.join(', ') : '';
+                    html += `<li><span class="verdict__action-type">${escapeHtml(a.type)}</span>: ${escapeHtml(targets)} &mdash; ${escapeHtml(a.reason || '')}</li>`;
+                }
+                html += '</ul>';
+            }
+            if (data.fired_actions && Array.isArray(data.fired_actions) && data.fired_actions.length) {
+                html += '<div class="verdict__section-label">Auto-remediation fired:</div>';
+                html += '<ul class="verdict__actions verdict__actions--fired">';
+                for (const fa of data.fired_actions) {
+                    const targets = Array.isArray(fa.targets) ? fa.targets.join(', ') : '';
+                    html += `<li><span class="verdict__action-type">${escapeHtml(fa.type)}</span>: ${escapeHtml(targets)}`;
+                    if (fa.job_id) {
+                        html += ` <button class="verdict__job-link" data-job-id="${escapeHtml(fa.job_id)}">[view job]</button>`;
+                    }
+                    html += '</li>';
+                }
+                html += '</ul>';
+            }
+            if (!data.summary && !data.checks && !data.concerns && !data.actions && !data.fired_actions) {
                 html = `<pre style="font-size:10px;color:var(--text-tertiary)">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
             }
         }
         dom.verdictBody.innerHTML = html;
+
+        // Wire view-job links in verdict
+        dom.verdictBody.querySelectorAll('.verdict__job-link[data-job-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                openTerminal(btn.dataset.jobId);
+            });
+        });
+    }
+
+    const HEALTH_PLAYBOOKS = new Set(['rolling-restart', 'node-reboot', 'drain-node', 'undrain-node']);
+
+    async function renderHealthPanel() {
+        if (!dom.terminalHealth || !dom.healthBody) return;
+        dom.terminalHealth.hidden = false;
+        dom.healthBody.innerHTML = '<div class="health__loading">Loading health data...</div>';
+
+        let haHtml = '';
+        let nfsHtml = '';
+
+        try {
+            const nodeData = await api.getNodes();
+            const nodes = (nodeData.nodes || []).filter(n => n.type !== 'pbs');
+            haHtml = '<div class="health__section-title">HA STATUS</div>';
+            haHtml += '<table class="health__table">';
+            haHtml += '<thead><tr><th>NODE</th><th>MASTER</th><th>LRM STATE</th><th>SERVICES</th><th>MAINT</th></tr></thead><tbody>';
+            for (const n of nodes) {
+                const master = n.is_ha_master ? '<span class="node-card__master-badge">YES</span>' : '&mdash;';
+                const lrm = escapeHtml(n.ha_lrm_state || 'unknown');
+                const pinned = n.ha_services_pinned != null ? n.ha_services_pinned : '?';
+                const maint = n.maintenance ? '<span class="health__badge health__badge--warn">YES</span>' : '&mdash;';
+                haHtml += `<tr><td>${escapeHtml(n.name)}</td><td>${master}</td><td>${lrm}</td><td>${pinned}</td><td>${maint}</td></tr>`;
+            }
+            haHtml += '</tbody></table>';
+        } catch (err) {
+            haHtml = `<div class="health__error">Failed to load HA status: ${escapeHtml(err.message)}</div>`;
+        }
+
+        try {
+            const nfsData = await api.getNfsState();
+            const clients = nfsData.clients || [];
+            nfsHtml = '<div class="health__section-title">NFS MOUNTS</div>';
+            nfsHtml += '<table class="health__table">';
+            nfsHtml += '<thead><tr><th>HOST</th><th>MOUNT</th><th>STATUS</th></tr></thead><tbody>';
+            for (const client of clients) {
+                for (const mount of (client.mounts || [])) {
+                    const dot = mount.ok
+                        ? '<span class="health__dot health__dot--ok"></span>'
+                        : '<span class="health__dot health__dot--fail"></span>';
+                    nfsHtml += `<tr><td>${escapeHtml(client.host)}</td><td>${escapeHtml(mount.target)}</td><td>${dot} ${mount.ok ? 'OK' : 'MISSING'}</td></tr>`;
+                }
+            }
+            if (!clients.length) {
+                nfsHtml += '<tr><td colspan="3" class="health__empty">No NFS client data available.</td></tr>';
+            }
+            nfsHtml += '</tbody></table>';
+        } catch (err) {
+            nfsHtml = `<div class="health__error">Failed to load NFS state: ${escapeHtml(err.message)}</div>`;
+        }
+
+        dom.healthBody.innerHTML = haHtml + nfsHtml;
     }
 
     function applyLineFilter() {
@@ -529,6 +620,7 @@
         resetTerminalStrip();
 
         const job = state.jobs.find(j => j.id === jobId);
+        _currentPlaybook = job ? job.playbook : null;
         const hosts = job && job.hosts && job.hosts.length > 0 ? job.hosts.join(', ') : 'cluster';
         dom.terminalTitle.textContent = job
             ? `JOB // ${job.playbook} // ${hosts}`
@@ -540,6 +632,9 @@
         dom.terminalClose.focus();
 
         if (job && job.verify) renderVerdictPanel(job.verify);
+        if (job && job.status === 'completed' && _currentPlaybook && HEALTH_PLAYBOOKS.has(_currentPlaybook)) {
+            renderHealthPanel();
+        }
 
         const sse = api.streamJob(jobId);
         state.activeSSE = sse;
@@ -600,6 +695,9 @@
                 dom.terminalStatus.className = `terminal__status ${data.status}`;
                 appendOutputLine(`\n--- ${label} ---`);
                 MooCommon.sendNotification('Herdmon', `${job ? job.playbook : jobId} — ${label}`);
+                if (data.status === 'completed' && _currentPlaybook && HEALTH_PLAYBOOKS.has(_currentPlaybook)) {
+                    renderHealthPanel();
+                }
             } catch (_) {}
             sse.close();
             state.activeSSE = null;
@@ -755,6 +853,14 @@
             dom.verdictBody.hidden = _verdictCollapsed;
             dom.verdictToggle.classList.toggle('collapsed', _verdictCollapsed);
         });
+
+        if (dom.healthToggle) {
+            dom.healthToggle.addEventListener('click', () => {
+                _healthCollapsed = !_healthCollapsed;
+                dom.healthBody.hidden = _healthCollapsed;
+                dom.healthToggle.classList.toggle('collapsed', _healthCollapsed);
+            });
+        }
 
         if (dom.maintenancePill) {
             dom.maintenancePill.addEventListener('click', openMaintModal);

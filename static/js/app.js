@@ -498,11 +498,40 @@
                 for (const c of data.concerns) html += `<li>${escapeHtml(c)}</li>`;
                 html += '</ul>';
             }
-            if (!data.summary && !data.checks && !data.concerns) {
+            if (data.actions && Array.isArray(data.actions) && data.actions.length) {
+                html += '<div class="verdict__section-label">Proposed remediations:</div>';
+                html += '<ul class="verdict__actions">';
+                for (const a of data.actions) {
+                    const targets = Array.isArray(a.targets) ? a.targets.join(', ') : '';
+                    html += `<li><span class="verdict__action-type">${escapeHtml(a.type)}</span>: ${escapeHtml(targets)} &mdash; ${escapeHtml(a.reason || '')}</li>`;
+                }
+                html += '</ul>';
+            }
+            if (data.fired_actions && Array.isArray(data.fired_actions) && data.fired_actions.length) {
+                html += '<div class="verdict__section-label">Auto-remediation fired:</div>';
+                html += '<ul class="verdict__actions verdict__actions--fired">';
+                for (const fa of data.fired_actions) {
+                    const targets = Array.isArray(fa.targets) ? fa.targets.join(', ') : '';
+                    html += `<li><span class="verdict__action-type">${escapeHtml(fa.type)}</span>: ${escapeHtml(targets)}`;
+                    if (fa.job_id) {
+                        html += ` <button class="verdict__job-link" data-job-id="${escapeHtml(fa.job_id)}">[view job]</button>`;
+                    }
+                    html += '</li>';
+                }
+                html += '</ul>';
+            }
+            if (!data.summary && !data.checks && !data.concerns && !data.actions && !data.fired_actions) {
                 html = `<pre style="font-size:10px;color:var(--text-tertiary)">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
             }
         }
         dom.verdictBody.innerHTML = html;
+
+        // Wire view-job links in verdict
+        dom.verdictBody.querySelectorAll('.verdict__job-link[data-job-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                openTerminal(btn.dataset.jobId);
+            });
+        });
     }
 
     function applyLineFilter() {
