@@ -98,10 +98,15 @@
         for (const node of nodes) {
             const statusClass = node.online ? 'online' : 'offline';
             const isPbs = node.type === 'pbs';
+            const isMaint = !isPbs && node.maintenance === true;
 
-            html += `<div class="node-card ${statusClass}">`;
+            html += `<div class="node-card ${statusClass}${isMaint ? ' maint' : ''}">`;
             html += `<div class="node-card__header">`;
-            html += `<span class="node-card__name">${escapeHtml(node.name)}</span>`;
+            html += `<span class="node-card__name">${escapeHtml(node.name)}`;
+            if (!isPbs && node.is_ha_master) {
+                html += ` <span class="node-card__master-badge">MASTER</span>`;
+            }
+            html += `</span>`;
             html += `<span class="node-card__status-dot ${statusClass}"></span>`;
             html += `</div>`;
 
@@ -122,6 +127,14 @@
                 }
                 if (node.kernel) {
                     html += `<div class="node-card__row"><span class="node-card__label">KERNEL</span><span class="node-card__value">${escapeHtml(node.kernel)}</span></div>`;
+                }
+                if (!isPbs) {
+                    if (isMaint) {
+                        html += `<div class="node-card__row"><span class="node-card__label">HA</span><span class="node-card__value node-card__value--maint">MAINTENANCE</span></div>`;
+                    } else if (node.ha_lrm_state != null) {
+                        const pinned = node.ha_services_pinned != null ? node.ha_services_pinned : 0;
+                        html += `<div class="node-card__row"><span class="node-card__label">HA</span><span class="node-card__value">${escapeHtml(String(node.ha_lrm_state))} &middot; ${pinned} services</span></div>`;
+                    }
                 }
             } else {
                 html += `<div class="node-card__row"><span class="node-card__label">STATUS</span><span class="node-card__value node-card__value--offline">OFFLINE</span></div>`;
