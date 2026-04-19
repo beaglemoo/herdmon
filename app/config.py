@@ -44,6 +44,7 @@ class PlaybookEntry(BaseModel):
 class OpenClawConfig(BaseModel):
     enabled: bool = False
     verify_url: str = "http://192.168.2.226:9090/verify"
+    maintenance_base_url: str = "http://192.168.2.226:9090"
     timeout_seconds: int = 120
     # Map playbook name -> verification kind ("proxmox_node", "lxc", "cluster")
     kinds: dict[str, str] = {}
