@@ -130,6 +130,16 @@
         verdictToggle: $('#verdictToggle'),
         verdictBody: $('#verdictBody'),
         updateAppBtn: $('#updateAppBtn'),
+        maintenancePill: $('#maintenancePill'),
+        maintModalOverlay: $('#maintModalOverlay'),
+        maintModalClose: $('#maintModalClose'),
+        maintModalCancel: $('#maintModalCancel'),
+        maintModalDisable: $('#maintModalDisable'),
+        maintModalEnable: $('#maintModalEnable'),
+        maintReason: $('#maintReason'),
+        maintScope: $('#maintScope'),
+        maintTtl: $('#maintTtl'),
+        maintTtlVal: $('#maintTtlVal'),
     };
 
     // ---- Node Cards ----
@@ -746,6 +756,41 @@
             dom.verdictToggle.classList.toggle('collapsed', _verdictCollapsed);
         });
 
+        if (dom.maintenancePill) {
+            dom.maintenancePill.addEventListener('click', openMaintModal);
+        }
+
+        if (dom.maintModalClose) dom.maintModalClose.addEventListener('click', closeMaintModal);
+        if (dom.maintModalCancel) dom.maintModalCancel.addEventListener('click', closeMaintModal);
+        if (dom.maintModalEnable) dom.maintModalEnable.addEventListener('click', doEnableMaintenance);
+        if (dom.maintModalDisable) dom.maintModalDisable.addEventListener('click', doDisableMaintenance);
+
+        if (dom.maintTtl) {
+            dom.maintTtl.addEventListener('input', () => {
+                dom.maintTtlVal.textContent = `${dom.maintTtl.value}m`;
+            });
+        }
+
+        if (dom.maintModalOverlay) {
+            dom.maintModalOverlay.addEventListener('click', (e) => {
+                if (e.target === dom.maintModalOverlay) closeMaintModal();
+            });
+            dom.maintModalOverlay.addEventListener('keydown', (e) => {
+                if (dom.maintModalOverlay.hidden) return;
+                if (e.key === 'Escape') { closeMaintModal(); return; }
+                if (e.key !== 'Tab') return;
+                const focusable = Array.from(dom.maintModalOverlay.querySelectorAll('button:not([disabled]):not([hidden]), textarea, select, input'));
+                if (!focusable.length) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault(); last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault(); first.focus();
+                }
+            });
+        }
+
         dom.terminalClose.addEventListener('click', closeTerminal);
         dom.terminalOverlay.addEventListener('click', (e) => {
             if (e.target === dom.terminalOverlay) closeTerminal();
@@ -769,6 +814,7 @@
             if (e.key === 'Escape') {
                 const confirmOverlay = document.getElementById('confirmOverlay');
                 if (confirmOverlay && !confirmOverlay.hidden) { hideConfirm(); return; }
+                if (dom.maintModalOverlay && !dom.maintModalOverlay.hidden) { closeMaintModal(); return; }
                 if (!dom.terminalOverlay.hidden) closeTerminal();
             }
         });
@@ -780,6 +826,101 @@
     const formatDuration = MooCommon.formatDuration;
 
     // ---- Init ----
+
+    // ---- Maintenance Pill ----
+
+    let _maintState = null;
+
+    function updateMaintenancePill(data) {
+        _maintState = data;
+        const pill = dom.maintenancePill;
+        if (!pill) return;
+        if (data && data.enabled) {
+            let label = 'MAINT';
+            if (data.scope && data.scope.host) label += ` \u00b7 ${data.scope.host}`;
+            else if (data.scope && Object.keys(data.scope).length === 0) label += ' \u00b7 cluster';
+            if (data.expiresAt) {
+                const remaining = Math.max(0, Math.round((new Date(data.expiresAt).getTime() - Date.now()) / 60000));
+                label += ` \u00b7 ${remaining}m`;
+            }
+            pill.textContent = label;
+            pill.classList.add('maint-pill--active');
+            document.body.classList.add('body--maint');
+        } else {
+            pill.textContent = 'MAINT: off';
+            pill.classList.remove('maint-pill--active');
+            document.body.classList.remove('body--maint');
+        }
+    }
+
+    async function fetchMaintenance() {
+        try {
+            const data = await api.getMaintenance();
+            updateMaintenancePill(data);
+        } catch (_) {
+            // OpenClaw may be offline; ignore silently
+        }
+    }
+
+    function populateScopeSelect() {
+        if (!dom.maintScope) return;
+        let html = '<option value="">Whole cluster</option>';
+        for (const node of state.nodes) {
+            if (node.type !== 'pbs') {
+                html += `<option value="${escapeHtml(node.name)}">${escapeHtml(node.name)}</option>`;
+            }
+        }
+        dom.maintScope.innerHTML = html;
+    }
+
+    function openMaintModal() {
+        populateScopeSelect();
+        const isEnabled = _maintState && _maintState.enabled;
+        dom.maintModalDisable.hidden = !isEnabled;
+        if (isEnabled && _maintState.reason) {
+            dom.maintReason.value = _maintState.reason;
+        } else {
+            dom.maintReason.value = '';
+        }
+        dom.maintTtl.value = '15';
+        dom.maintTtlVal.textContent = '15m';
+        dom.maintModalOverlay.hidden = false;
+        dom.maintReason.focus();
+    }
+
+    function closeMaintModal() {
+        dom.maintModalOverlay.hidden = true;
+    }
+
+    async function doEnableMaintenance() {
+        const reason = dom.maintReason.value.trim() || 'manual maintenance';
+        const scopeHost = dom.maintScope.value;
+        const ttl = parseInt(dom.maintTtl.value, 10) || 15;
+        const scope = scopeHost ? { host: scopeHost } : {};
+        dom.maintModalEnable.disabled = true;
+        try {
+            const data = await api.enableMaintenance({ reason, scope, ttlMinutes: ttl });
+            updateMaintenancePill(data);
+            closeMaintModal();
+        } catch (err) {
+            showConfirm('Error', 'Failed to enable maintenance: ' + err.message, null);
+        } finally {
+            dom.maintModalEnable.disabled = false;
+        }
+    }
+
+    async function doDisableMaintenance() {
+        dom.maintModalDisable.disabled = true;
+        try {
+            await api.disableMaintenance();
+            await fetchMaintenance();
+            closeMaintModal();
+        } catch (err) {
+            showConfirm('Error', 'Failed to disable maintenance: ' + err.message, null);
+        } finally {
+            dom.maintModalDisable.disabled = false;
+        }
+    }
 
     async function loadPlaybooks() {
         try {
@@ -802,6 +943,8 @@
         state.refreshInterval = setInterval(loadNodes, 30000);
         checkAppVersion();
         setInterval(checkAppVersion, 5 * 60 * 1000);
+        fetchMaintenance();
+        state.maintenanceInterval = setInterval(fetchMaintenance, 30000);
 
         const hasActive = state.jobs.some(j => j.status === 'running' || j.status === 'queued');
         if (hasActive) startJobPolling();

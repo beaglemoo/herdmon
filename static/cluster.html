@@ -22,6 +22,8 @@
         <div class="top-bar__status">
             <button class="btn--app-update" id="updateAppBtn">UPDATE APP</button>
             <span class="top-bar__divider"></span>
+            <button class="maint-pill" id="maintenancePill" aria-label="Toggle OpenClaw maintenance mode">MAINT: off</button>
+            <span class="top-bar__divider"></span>
             <span class="top-bar__indicator" id="connectionIndicator"></span>
             <span class="top-bar__label" id="connectionLabel" aria-live="polite">CONNECTING</span>
             <span class="top-bar__divider"></span>
@@ -98,6 +100,39 @@
                     <button class="verdict__toggle" id="verdictToggle" aria-label="Toggle verdict">&#9660;</button>
                 </div>
                 <div class="verdict__body" id="verdictBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="maint-modal-overlay" id="maintModalOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="maintModalTitle">
+        <div class="maint-modal">
+            <div class="maint-modal__header">
+                <span class="maint-modal__title" id="maintModalTitle">MAINTENANCE MODE</span>
+                <button class="terminal__close" id="maintModalClose" aria-label="Close">&times;</button>
+            </div>
+            <div class="maint-modal__body">
+                <div class="maint-modal__row">
+                    <label class="maint-modal__label" for="maintReason">REASON</label>
+                    <textarea class="maint-modal__textarea" id="maintReason" rows="2" placeholder="e.g. scheduled node drain"></textarea>
+                </div>
+                <div class="maint-modal__row">
+                    <label class="maint-modal__label" for="maintScope">SCOPE</label>
+                    <select class="maint-modal__select" id="maintScope">
+                        <option value="">Whole cluster</option>
+                    </select>
+                </div>
+                <div class="maint-modal__row">
+                    <label class="maint-modal__label" for="maintTtl">TTL (MINUTES)</label>
+                    <div class="maint-modal__ttl-wrap">
+                        <input type="range" class="maint-modal__slider" id="maintTtl" min="5" max="60" step="5" value="15">
+                        <span class="maint-modal__ttl-val" id="maintTtlVal">15m</span>
+                    </div>
+                </div>
+            </div>
+            <div class="maint-modal__footer">
+                <button class="btn btn--ghost" id="maintModalCancel">CANCEL</button>
+                <button class="btn btn--danger" id="maintModalDisable" hidden>DISABLE MAINTENANCE</button>
+                <button class="btn btn--warning" id="maintModalEnable">ENABLE MAINTENANCE</button>
             </div>
         </div>
     </div>
