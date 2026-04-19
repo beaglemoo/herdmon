@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import load_config
-from app.routers import cluster, health, hosts, jobs
+from app.routers import cluster, health, hosts, jobs, maintenance
 from app.services.ansible_runner import AnsibleRunner
 from app.services.openclaw import OpenClawClient
 from app.services.patchmon import PatchmonClient
@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     jobs.playbook_config = settings.playbooks
 
     cluster.cluster_nodes = settings.cluster_nodes
+    maintenance.maintenance_base_url = settings.openclaw.maintenance_base_url
 
     health.app_config = settings.app
 
@@ -62,6 +63,7 @@ app.add_middleware(NoCacheStaticMiddleware)
 app.include_router(hosts.router)
 app.include_router(jobs.router)
 app.include_router(cluster.router)
+app.include_router(maintenance.router)
 app.include_router(health.router)
 
 static_dir = Path(__file__).parent.parent / "static"
