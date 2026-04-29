@@ -38,7 +38,6 @@ openclaw:
     node-reboot: proxmox_node
     rolling-restart: cluster
     host-reboot: proxmox_node
-    update-lxc-system: lxc
     update-lxc-apps: lxc
     update-lxc-full: lxc
     update-lxc-backup: lxc
@@ -48,11 +47,10 @@ openclaw:
 
 playbooks:
   # ----- LXC update variants -----
-  - name: "update-lxc-system"
-    file: "update-lxc-system.yml"
-    description: "Update LXC system packages only (apt, no /usr/bin/update)"
-    groups: ["lxc"]
-
+  # Note: apt-only patching is now handled by PatchMon's native wizard at
+  # https://patchmon.sillymoo.dev (the old "update-lxc-system" mode was
+  # retired 2026-04-29). The remaining modes here cover community-script
+  # app updates and combined apt+app passes.
   - name: "update-lxc-apps"
     file: "update-lxc-apps-v2.yml"
     description: "Update LXC application layer via community-scripts update-apps.sh"
