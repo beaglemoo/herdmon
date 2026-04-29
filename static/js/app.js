@@ -180,6 +180,59 @@
         }
     }
 
+    // Patch volatile fields (status, counts, reboot) on existing rows in place.
+    // Returns true if the table was patched, false when a full re-render is needed
+    // (host set changed, sort changed, expanded row present, or first render).
+    function updateHostRowsInPlace(hosts) {
+        const existingRows = dom.hostTableBody.querySelectorAll('tr[data-host-id]');
+        if (existingRows.length !== hosts.length) return false;
+
+        const byId = new Map(hosts.map(h => [h.id, h]));
+        const idsInOrder = [...existingRows].map(r => r.dataset.hostId);
+        for (let i = 0; i < idsInOrder.length; i++) {
+            if (idsInOrder[i] !== hosts[i].id) return false;
+        }
+        // Detect expanded package row (has no data-host-id) — fall back to full render.
+        if (dom.hostTableBody.querySelector('tr.package-detail-row')) return false;
+
+        for (const row of existingRows) {
+            const host = byId.get(row.dataset.hostId);
+            if (!host) continue;
+            const hasUpdates = host.updates_count > 0;
+            const hasSecurity = host.security_updates_count > 0;
+
+            row.classList.toggle('has-updates', hasUpdates);
+
+            const updatesEl = row.querySelector('.update-count');
+            if (updatesEl) {
+                updatesEl.textContent = host.updates_count;
+                updatesEl.classList.toggle('has-updates', hasUpdates);
+                updatesEl.classList.toggle('zero', !hasUpdates);
+            }
+
+            const secEl = row.querySelector('.security-badge');
+            if (secEl) {
+                secEl.textContent = host.security_updates_count;
+                secEl.classList.toggle('has-security', hasSecurity);
+                secEl.classList.toggle('zero', !hasSecurity);
+            }
+
+            const statusEl = row.querySelector('.status-dot');
+            if (statusEl) {
+                const statusClass = host.status === 'active' ? 'active' : (host.status === 'offline' ? 'offline' : 'unknown');
+                statusEl.className = `status-dot ${statusClass}`;
+                statusEl.textContent = host.status || 'unknown';
+            }
+
+            const rebootEl = row.querySelector('.reboot-tag');
+            if (rebootEl) {
+                rebootEl.className = `reboot-tag ${host.needs_reboot ? 'needs-reboot' : 'no-reboot'}`;
+                rebootEl.textContent = host.needs_reboot ? 'YES' : '--';
+            }
+        }
+        return true;
+    }
+
     function bindHostTableEvents() {
         // Checkbox changes
         dom.hostTableBody.querySelectorAll('.row-checkbox').forEach(cb => {
@@ -712,7 +765,9 @@
                 }
             }
 
-            renderHostTable(state.hosts);
+            if (!updateHostRowsInPlace(state.hosts)) {
+                renderHostTable(state.hosts);
+            }
             updateSelectedCount();
             updateSelectAllState();
             updatePendingButton();
@@ -985,7 +1040,7 @@
             pollJobs(),
         ]);
 
-        state.refreshInterval = setInterval(loadHosts, 60000);
+        state.refreshInterval = setInterval(loadHosts, 15000);
         checkAppVersion();
         setInterval(checkAppVersion, 5 * 60 * 1000);
         MooCommon.requestNotificationPermission();
