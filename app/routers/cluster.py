@@ -210,7 +210,13 @@ async def get_cluster_nodes():
 
 
 async def _query_nfs_client(client: dict) -> dict:
-    """SSH to an NFS client and check which mounts are present."""
+    """SSH to a remote-mount client and check which mounts are present.
+
+    cifs is in the type list because sonarr-hd and sonarr-4k mount their
+    Synology shares over SMB (for server-side copy on import). Filtering on
+    nfs,nfs4 alone reports those mounts MISSING while they are healthy, which
+    then drives a spurious remediate-nfs from ops-verify.
+    """
     host = client["host"]
     ip = client["ip"]
     expected = set(client["mounts"])
@@ -222,7 +228,7 @@ async def _query_nfs_client(client: dict) -> dict:
             "ssh",
             *_SSH_OPTS,
             f"root@{ip}",
-            "findmnt -t nfs,nfs4 -n -o TARGET,FSTYPE",
+            "findmnt -t nfs,nfs4,cifs -n -o TARGET,FSTYPE",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
