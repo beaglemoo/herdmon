@@ -91,9 +91,10 @@ playbooks:
     groups: ["proxmox"]
 
   - name: "undrain-node"
-    file: "undrain-node.yml"
+    file: "drain-node.yml"
     description: "Exit HA maintenance on a Proxmox node and resume service placement"
     groups: ["proxmox"]
+    extra_args: ["-e", "mode=exit"]
 
   - name: "host-reboot"
     file: "reboot-host.yml"
